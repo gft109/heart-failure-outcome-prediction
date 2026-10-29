@@ -1,0 +1,34 @@
+# PhysioNet data (restricted access: the Data Use Agreement forbids redistribution)
+DataBase/
+
+#Claude instructions
+CLAUDE.md
+
+#Materia
+Instrucoes/
+
+# Contains real values per variable (min/max of each exam, patient ID range)
+results/variable_overview.csv
+
+# Python environment
+.venv/
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# OS / editor
+.DS_Store
+.vscode/
