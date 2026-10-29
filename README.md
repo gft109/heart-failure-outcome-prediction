@@ -64,27 +64,20 @@ As quatro linhas devem terminar em `OK`.
 
 ## Como rodar
 
-Requer Python 3.13.
+Requer Python 3.13. Na primeira vez, rode na raiz do repositório:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m ipykernel install --user --name trab-int-comp --display-name "Python (trab-int-comp)"
-jupyter lab notebooks/main.ipynb
-```
-
-### Antes de fazer commits
-
-O notebook exibe dados de pacientes nas saídas das células. Para que essas saídas nunca sejam enviadas ao GitHub, o repositório usa o [nbstripout](https://github.com/kynan/nbstripout): ele remove as saídas do notebook em cada commit, sem alterar a cópia local. O `.gitattributes` já está no repositório, mas o filtro precisa ser ativado uma vez em cada clone, com o ambiente virtual ativo:
-
-```bash
 nbstripout --install
 ```
 
-### Abrindo o notebook
+Depois, abra `notebooks/main.ipynb` no VS Code, selecione o interpretador `.venv` como kernel e rode todas as células. Fora do VS Code, use `jupyter lab notebooks/main.ipynb` com o ambiente ativo.
 
-No VS Code, abra `notebooks/main.ipynb` e selecione o kernel **"Python (trab-int-comp)"** (ou o interpretador `.venv`). Rode todas as células em ordem. As figuras são salvas em `results/figures/` e as tabelas em `results/`.
+As figuras são salvas em `results/figures/` e as tabelas em `results/`.
+
+> **Por que o `nbstripout --install`?** As saídas das células do notebook mostram dados de pacientes, que não podem ser publicados. Esse comando faz o git remover as saídas a cada commit; a cópia local do notebook continua com tudo. O git não permite que um repositório ative isso sozinho ao ser clonado, por isso o comando precisa ser rodado uma vez em cada clone.
 
 ## Estrutura do repositório
 
