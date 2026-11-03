@@ -1,3 +1,5 @@
+# (Esta versão é o fork 1 da versão principal)
+
 # Predição de óbito ou readmissão em pacientes com insuficiência cardíaca
 
 Trabalho final da disciplina **Inteligência Computacional Aplicada a Problemas de Engenharia** (UFMG, 2026/2).
