@@ -95,3 +95,96 @@ def plot_missing_matrix(patients, variable_groups):
     ax.grid(False)
     save_fig(fig, "missing_matrix")
     plt.show()
+
+def generate_drug_summary(drugs, patients):
+    """Gera um resumo estatístico do uso de medicamentos."""
+    drug_summary = (
+        drugs.groupby("Drug_name")
+        .agg(registros=("inpatient.number", "size"), internações=("inpatient.number", "nunique"))
+        .assign(**{"internações (%)": lambda t: t["internações"].div(len(patients)).mul(100).round(1)})
+        .sort_values("internações", ascending=False)
+    )
+    print(f"Internações com ao menos um medicamento: {drugs['inpatient.number'].nunique()} de {len(patients)}")
+    print(f"Internações em drugs ausentes de patients: {len(set(drugs['inpatient.number']) - set(patients['inpatient.number']))}")
+    
+    # display(drug_summary)
+    return drug_summary
+
+
+def plot_outcome_prevalence(patients, target):
+    """Gera a tabela e o gráfico de prevalência dos diferentes desfechos e do alvo."""
+    BINARY_OUTCOMES = {
+        "death.within.28.days": "Óbito em 28 dias",
+        "death.within.3.months": "Óbito em 3 meses",
+        "death.within.6.months": "Óbito em 6 meses",
+        "re.admission.within.28.days": "Readmissão em 28 dias",
+        "re.admission.within.3.months": "Readmissão em 3 meses",
+        "re.admission.within.6.months": "Readmissão em 6 meses",
+        "return.to.emergency.department.within.6.months": "Retorno ao PS em 6 meses",
+    }
+    
+    outcome_summary = pd.DataFrame(
+        {
+            "positivos": patients[list(BINARY_OUTCOMES)].sum().astype(int),
+            "prevalência (%)": patients[list(BINARY_OUTCOMES)].mean().mul(100).round(1),
+        }
+    ).rename(index=BINARY_OUTCOMES)
+    
+    outcome_summary.loc["Óbito ou readmissão em 6 meses (alvo)"] = [target.sum(), round(target.mean() * 100, 1)]
+    
+    display(outcome_summary)
+    
+    fig, ax = plt.subplots(figsize=(6, 3.2))
+    plot_data = outcome_summary.iloc[::-1]
+    colors = [SERIES_COLOR if "alvo" in label else NEUTRAL_COLOR for label in plot_data.index]
+    ax.barh(plot_data.index, plot_data["prevalência (%)"], color=colors, height=0.6)
+    for position, (_, row) in enumerate(plot_data.iterrows()):
+        ax.text(row["prevalência (%)"] + 0.8, position, f"{row['positivos']:.0f} ({row['prevalência (%)']:.1f}%)",
+                va="center", fontsize=8, color=MUTED_COLOR)
+    ax.set_xlabel("Prevalência (%)")
+    ax.set_xlim(0, plot_data["prevalência (%)"].max() * 1.25)
+    ax.grid(axis="y", visible=False)
+    save_fig(fig, "outcome_prevalence")
+    plt.show()
+
+
+def print_outcome_details(patients, target):
+    """Exibe o detalhamento das interseções e consistências dos desfechos."""
+    READMISSION_COLUMNS = ["re.admission.within.28.days", "re.admission.within.3.months", "re.admission.within.6.months"]
+    readmitted = patients[READMISSION_COLUMNS].eq(1).any(axis=1)
+    died = patients["death.within.6.months"].eq(1)
+    
+    for event in ("death", "re.admission"):
+        d28, m3, m6 = (patients[f"{event}.within.{window}"] for window in ("28.days", "3.months", "6.months"))
+        print(f"{event}: 28d sem 3m = {(d28 > m3).sum()} | 3m sem 6m = {(m3 > m6).sum()}")
+
+    print(f"\nSó readmissão: {(readmitted & ~died).sum()}")
+    print(f"Só óbito: {(died & ~readmitted).sum()}")
+    print(f"Readmissão e óbito: {(readmitted & died).sum()}")
+    print(f"Óbitos durante a internação: {patients['outcome.during.hospitalization'].eq('Dead').sum()}")
+    print(f"\nTotal no alvo: {target.sum()} de {len(target)} ({target.mean():.1%})")
+
+
+def plot_missing_rate_by_variable(patients):
+    """Calcula estatísticas de dados faltantes e plota o gráfico de barras por variável."""
+    missing_rate = patients.isna().mean().mul(100)
+    
+    missing_bins = pd.cut(missing_rate, bins=[-0.1, 0, 20, 50, 100], labels=["0%", "(0, 20]%", "(20, 50]%", "(50, 100]%"])
+    print("Nº de variáveis por faixa de faltantes:")
+    print(missing_bins.value_counts().sort_index().to_string())
+    print(f"\nrespiratory.support. — faltantes: {missing_rate['respiratory.support.']:.1f}%")
+    print(f"Internações sem nenhum faltante: {patients.notna().all(axis=1).sum()}")
+    
+    missing_only = missing_rate[missing_rate > 0].sort_values()
+    
+    fig, ax = plt.subplots(figsize=(7, 0.16 * len(missing_only) + 1))
+    ax.barh(missing_only.index, missing_only.values, color=SERIES_COLOR, height=0.7)
+    for threshold in (20, 50):
+        ax.axvline(threshold, color=MUTED_COLOR, linestyle="--", linewidth=1)
+    ax.set_xlabel("Valores faltantes (%)")
+    ax.set_xlim(0, 100)
+    ax.tick_params(axis="y", labelsize=6)
+    ax.margins(y=0.005)
+    ax.grid(axis="y", visible=False)
+    save_fig(fig, "missing_rate_by_variable")
+    plt.show()

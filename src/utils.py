@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import shutil
 
 # ==========================================
 # 1. Configurações Globais e Reprodutibilidade
@@ -55,4 +56,19 @@ def save_fig(fig, name):
     """
     filepath = FIGURES_DIR / f"{name}.pdf"
     fig.savefig(filepath, bbox_inches="tight")
-    print(f"Figura salva em: {filepath}")
+    print(f"\nFigura salva em: {filepath}")
+    
+def clean_results():
+    """
+    Apaga todos os ficheiros e subpastas gerados no diretório de resultados,
+    recriando a estrutura de pastas vazias logo a seguir.
+    Útil para limpar saídas residuais de execuções anteriores.
+    """
+    if RESULTS_DIR.exists():
+        shutil.rmtree(RESULTS_DIR)
+        
+    # Recria as pastas para evitar erros de "FileNotFound" nas próximas execuções
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Limpeza concluída: O diretório '{RESULTS_DIR.name}/' foi esvaziado.")
