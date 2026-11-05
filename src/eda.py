@@ -3,12 +3,26 @@
 # Responsável por gerar visualizações e resumos estatísticos.
 # """
 
+import textwrap
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.transforms import Bbox
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import ListedColormap
-from IPython.display import Markdown, display
+from IPython.display import FileLink, Markdown, display
 from src.utils import SERIES_COLOR, NEUTRAL_COLOR, NEUTRAL_LIGHT_COLOR, MUTED_COLOR, RESULTS_DIR, save_fig
+
+# Importações para geração do PDF com as tabelas
+# Requer: pip install reportlab
+from xml.sax.saxutils import escape
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+)
 
 def variable_kind(series):
     """Determina o tipo da variável clínica."""
@@ -28,12 +42,12 @@ def observed_values(series):
 
 def generate_variable_overview(patients, data_dictionary, variable_groups):
     """
-    Gera e guarda o resumo geral (Tabela 1) das variáveis, incluindo
-    tipo, percentagem de dados em falta e valores observados.
+    Gera e guarda o resumo geral das variáveis (CSV) e exibe no notebook
+    apenas a Tabela 1 (Resumo por Grupo Clínico).
     """
     column_group = {column: group for group, columns in variable_groups.items() for column in columns}
     descriptions = data_dictionary.set_index("Variables")["Description"]
-    
+
     variable_overview = pd.DataFrame(
         {
             "grupo": [column_group.get(c, "Desconhecido") for c in patients.columns],
@@ -44,27 +58,104 @@ def generate_variable_overview(patients, data_dictionary, variable_groups):
             "valores observados": [observed_values(patients[c]) for c in patients.columns],
         }
     )
-    
-    variable_overview["grupo"] = pd.Categorical(variable_overview["grupo"], categories=list(variable_groups), ordered=True)
+
+    variable_overview["grupo"] = pd.Categorical(
+        variable_overview["grupo"], categories=list(variable_groups), ordered=True
+    )
     variable_overview = variable_overview.sort_values("grupo", kind="stable").reset_index(drop=True)
     variable_overview.to_csv(RESULTS_DIR / "variable_overview.csv", index=False)
-    
+        
     summary = variable_overview.groupby("grupo", observed=True).agg(
         n_variáveis=("variável", "size"),
         faltantes_médio=("faltantes (%)", "mean"),
         faltantes_máx=("faltantes (%)", "max"),
     ).round(1)
-    
+
     print("Resumo por Grupo Clínico:")
     display(summary)
     return variable_overview
 
+
+def export_variable_overview_pdf(variable_overview, path):
+    """Exporta uma tabela formatada por grupo clínico para um PDF (A4 paisagem)."""
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("t", parent=styles["Heading2"], spaceAfter=6)
+    cell = ParagraphStyle("c", parent=styles["BodyText"], fontSize=7.5, leading=9.5)
+    cell_wrap = ParagraphStyle("cw", parent=cell, wordWrap="CJK")  # quebra textos longos sem espaços
+    head = ParagraphStyle("h", parent=cell, fontName="Helvetica-Bold", textColor=colors.white)
+
+    def p(value, style=cell):
+        text = "—" if pd.isna(value) else str(value)
+        return Paragraph(escape(text), style)
+
+    doc = SimpleDocTemplate(
+        str(path), pagesize=landscape(A4),
+        leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+        title="Resumo geral das variáveis",
+    )
+
+    columns = ["variável", "descrição", "tipo", "faltantes (%)", "valores observados"]
+    col_widths = [3.5 * cm, 8.0 * cm, 2.5 * cm, 2.2 * cm, 10.5 * cm]  # soma = 26,7 cm
+
+    story = []
+    groups = list(variable_overview.groupby("grupo", observed=True))
+    for i, (group, table) in enumerate(groups):
+        story.append(Paragraph(escape(str(group)), title_style))
+
+        data = [[Paragraph(c, head) for c in columns]]
+        for _, row in table.iterrows():
+            data.append([
+                p(row["variável"]), p(row["descrição"]), p(row["tipo"]),
+                p(row["faltantes (%)"]), p(row["valores observados"], cell_wrap),
+            ])
+
+        t = Table(data, colWidths=col_widths, repeatRows=1)  # cabeçalho repetido a cada página
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2F4B7C")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F1F4F9")]),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#B8C2D3")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t)
+        if i < len(groups) - 1:
+            story.append(PageBreak())  # cada grupo começa em uma nova página
+
+    def footer(canvas, doc_):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.drawRightString(landscape(A4)[0] - 1.5 * cm, 0.8 * cm, f"Página {doc_.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+
+
 def display_variable_overview(variable_overview):
-    """Exibe a tabela geral formatada por grupo."""
-    with pd.option_context("display.max_colwidth", None):
-        for group, table in variable_overview.groupby("grupo", observed=True):
-            display(Markdown(f"#### {group}"))
-            display(table.drop(columns="grupo").set_index("variável"))
+    """
+    No notebook, mostra apenas orientações; as tabelas por grupo
+    são exportadas para PDF.
+    """
+    pdf_name = "variable_overview.pdf"
+    pdf_path = RESULTS_DIR / pdf_name
+    csv_name = "variable_overview.csv"
+    csv_path = RESULTS_DIR / csv_name
+    n_groups = variable_overview["grupo"].nunique()
+    export_variable_overview_pdf(variable_overview, pdf_path)
+
+    display(Markdown(
+        f"### Tabelas detalhadas por grupo clínico\n"
+        f"As {n_groups} tabelas detalhadas (variável, descrição, tipo, % de faltantes e "
+        f"valores observados) não são exibidas aqui. Foram exportadas para um arquivo PDF, "
+        f"com uma tabela por grupo, uma por página.\n\n"
+        f"- Arquivo: `{pdf_path}`\n"
+        f"- Como abrir: clique no link abaixo ou acesse a pasta de resultados do projeto.\n"
+        f"- Dados brutos: `variable_overview.csv`, na mesma pasta.\n"
+        f"- Para regenerar o PDF, execute novamente esta célula."
+    ))
+    display(FileLink(pdf_path, result_html_prefix="📄 Abrir PDF: "))
+    display(FileLink(csv_path, result_html_prefix="📄 Abrir CSV: "))
+
 
 def plot_missing_matrix(patients, variable_groups):
     """

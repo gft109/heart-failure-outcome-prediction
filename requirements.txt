@@ -6,4 +6,5 @@ matplotlib==3.11.2
 seaborn==0.13.2
 jupyterlab==4.6.4
 ipykernel==7.4.0
-nbstripout==0.9.1
+nbstripout==0.9.1x
+reportlab==5.1.0
