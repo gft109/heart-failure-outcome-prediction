@@ -3,6 +3,7 @@ Módulo de utilidades e configurações globais para o projeto.
 Centraliza paths, configurações visuais e sementes aleatórias.
 """
 
+from IPython.display import display, Markdown, FileLink
 from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -46,20 +47,6 @@ def setup_plotting():
     pd.set_option("display.max_rows", 200)
     sns.set_theme(style="whitegrid", context="paper")
 
-# def save_fig(fig, name):
-#     """
-#     Salva uma figura como PDF vetorial na pasta correta (results/figures/).
-    
-#     Parâmetros:
-#         fig (matplotlib.figure.Figure): O objeto da figura a ser salva.
-#         name (str): O nome do arquivo sem a extensão.
-#     """
-#     filepath = FIGURES_DIR / f"{name}.pdf"
-#     fig.savefig(filepath, bbox_inches="tight")
-#     print(f"\nFigura salva em: {filepath}")
-
-from IPython.display import display, Markdown, FileLink
-
 def save_fig(fig, name):
     """
     Salva uma figura como PDF vetorial na pasta correta (results/figures/).
@@ -71,11 +58,7 @@ def save_fig(fig, name):
     filepath = FIGURES_DIR / f"{name}.pdf"
     fig.savefig(filepath, bbox_inches="tight")
 
-    display(Markdown(
-        f"Figura salva como PDF vetorial\n\n"
-        f"- Arquivo: `{filepath}`\n"
-        f"- Como abrir: clique no link abaixo ou acesse a pasta `{FIGURES_DIR}`."
-    ))
+    print(f"Figura salva como PDF vetorial em: \n{filepath}")
     display(FileLink(filepath, result_html_prefix="📄 Abrir figura: "))
     
 def clean_results():

@@ -91,3 +91,39 @@ def create_target(patients_df):
     target = (readmitted | died).astype(int).rename("target")
     
     return target
+
+def get_variable_types(df):
+    """
+    Classifica as variáveis do DataFrame em categorias de tipologia
+    para alimentar os pipelines de pré-processamento.
+    
+    Parâmetros:
+        df (pd.DataFrame): O DataFrame a analisar.
+        
+    Retorna:
+        dict: Dicionário com as listas de colunas 'binarias', 'categoricas', 
+              'continuas' e 'discretas'.
+    """
+    binary = []
+    categorical = []
+    continuous = []
+    discrete = []
+    
+    for col in df.columns:
+        n_unique = df[col].dropna().nunique()
+        if n_unique <= 2:
+            binary.append(col)
+        elif pd.api.types.is_numeric_dtype(df[col]):
+            if n_unique > 10:
+                continuous.append(col)
+            else:
+                discrete.append(col)
+        else:
+            categorical.append(col)
+            
+    return {
+        "binarias": binary,
+        "categoricas": categorical,
+        "continuas": continuous,
+        "discretas": discrete
+    }

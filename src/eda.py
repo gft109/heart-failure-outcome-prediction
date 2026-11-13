@@ -6,6 +6,7 @@
 import textwrap
 import pandas as pd
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.transforms import Bbox
 from matplotlib.backends.backend_pdf import PdfPages
@@ -143,19 +144,58 @@ def display_variable_overview(variable_overview):
     n_groups = variable_overview["grupo"].nunique()
     export_variable_overview_pdf(variable_overview, pdf_path)
 
-    display(Markdown(
-        f"### Tabelas detalhadas por grupo clínico\n"
-        f"As {n_groups} tabelas detalhadas (variável, descrição, tipo, % de faltantes e "
-        f"valores observados) não são exibidas aqui. Foram exportadas para um arquivo PDF, "
-        f"com uma tabela por grupo, uma por página.\n\n"
-        f"- Arquivo: `{pdf_path}`\n"
-        f"- Como abrir: clique no link abaixo ou acesse a pasta de resultados do projeto.\n"
-        f"- Dados brutos: `variable_overview.csv`, na mesma pasta.\n"
-        f"- Para regenerar o PDF, execute novamente esta célula."
-    ))
+    # display(Markdown(
+    #     f"### Tabelas detalhadas por grupo clínico\n"
+    #     f"As {n_groups} tabelas detalhadas (variável, descrição, tipo, % de faltantes e "
+    #     f"valores observados) não são exibidas aqui. Foram exportadas para um arquivo PDF, "
+    #     f"com uma tabela por grupo, uma por página.\n\n"
+    #     f"- Arquivo: `{pdf_path}`\n"
+    #     f"- Como abrir: clique no link abaixo ou acesse a pasta de resultados do projeto.\n"
+    #     f"- Dados brutos: `variable_overview.csv`, na mesma pasta.\n"
+    #     f"- Para regenerar o PDF, execute novamente esta célula."
+    # ))
+    print(f"Arquivo PDF contendo as tabelas salvo em: \n{pdf_path}")
+    print(f"\nArquivo CSV contendo os dados brutos salvo em: \n{csv_path}")
     display(FileLink(pdf_path, result_html_prefix="📄 Abrir PDF: "))
     display(FileLink(csv_path, result_html_prefix="📄 Abrir CSV: "))
 
+def generate_drug_summary(drugs, patients):
+    """Gera um resumo estatístico do uso de medicamentos."""
+    drug_summary = (
+        drugs.groupby("Drug_name")
+        .agg(registros=("inpatient.number", "size"), internações=("inpatient.number", "nunique"))
+        .assign(**{"internações (%)": lambda t: t["internações"].div(len(patients)).mul(100).round(1)})
+        .sort_values("internações", ascending=False)
+    )
+    print(f"Internações com ao menos um medicamento: {drugs['inpatient.number'].nunique()} de {len(patients)}")
+    print(f"Internações presentes em drugs e ausentes de patients: {len(set(drugs['inpatient.number']) - set(patients['inpatient.number']))}")
+    
+    # display(drug_summary)
+    return drug_summary
+
+def plot_missing_rate_by_variable(patients):
+    """Calcula estatísticas de dados faltantes e plota o gráfico de barras por variável."""
+    missing_rate = patients.isna().mean().mul(100)
+    
+    missing_bins = pd.cut(missing_rate, bins=[-0.1, 0, 20, 50, 100], labels=["0%", "(0, 20]%", "(20, 50]%", "(50, 100]%"])
+    print("Nº de variáveis por faixa de faltantes:")
+    print(missing_bins.value_counts().sort_index().to_string())
+    print(f"\nrespiratory.support. — faltantes: {missing_rate['respiratory.support.']:.1f}%")
+    print(f"Internações sem nenhum faltante: {patients.notna().all(axis=1).sum()}")
+    
+    missing_only = missing_rate[missing_rate > 0].sort_values()
+    
+    fig, ax = plt.subplots(figsize=(7, 0.16 * len(missing_only) + 1))
+    ax.barh(missing_only.index, missing_only.values, color=SERIES_COLOR, height=0.7)
+    for threshold in (20, 50):
+        ax.axvline(threshold, color=MUTED_COLOR, linestyle="--", linewidth=1)
+    ax.set_xlabel("Valores faltantes (%)")
+    ax.set_xlim(0, 100)
+    ax.tick_params(axis="y", labelsize=6)
+    ax.margins(y=0.005)
+    ax.grid(axis="y", visible=False)
+    plt.show()
+    save_fig(fig, "missing_rate_by_variable")
 
 def plot_missing_matrix(patients, variable_groups):
     """
@@ -184,23 +224,8 @@ def plot_missing_matrix(patients, variable_groups):
     ax.set_yticks([])
     ax.set_ylabel("Internações (mais completa no topo)")
     ax.grid(False)
-    save_fig(fig, "missing_matrix")
     plt.show()
-
-def generate_drug_summary(drugs, patients):
-    """Gera um resumo estatístico do uso de medicamentos."""
-    drug_summary = (
-        drugs.groupby("Drug_name")
-        .agg(registros=("inpatient.number", "size"), internações=("inpatient.number", "nunique"))
-        .assign(**{"internações (%)": lambda t: t["internações"].div(len(patients)).mul(100).round(1)})
-        .sort_values("internações", ascending=False)
-    )
-    print(f"Internações com ao menos um medicamento: {drugs['inpatient.number'].nunique()} de {len(patients)}")
-    print(f"Internações em drugs ausentes de patients: {len(set(drugs['inpatient.number']) - set(patients['inpatient.number']))}")
-    
-    # display(drug_summary)
-    return drug_summary
-
+    save_fig(fig, "missing_matrix")
 
 def plot_outcome_prevalence(patients, target):
     """Gera a tabela e o gráfico de prevalência dos diferentes desfechos e do alvo."""
@@ -235,8 +260,8 @@ def plot_outcome_prevalence(patients, target):
     ax.set_xlabel("Prevalência (%)")
     ax.set_xlim(0, plot_data["prevalência (%)"].max() * 1.25)
     ax.grid(axis="y", visible=False)
-    save_fig(fig, "outcome_prevalence")
     plt.show()
+    save_fig(fig, "outcome_prevalence")
 
 
 def print_outcome_details(patients, target):
@@ -255,27 +280,92 @@ def print_outcome_details(patients, target):
     print(f"Óbitos durante a internação: {patients['outcome.during.hospitalization'].eq('Dead').sum()}")
     print(f"\nTotal no alvo: {target.sum()} de {len(target)} ({target.mean():.1%})")
 
+def generate_table1_stratified(patients, target, key_features):
+    """
+    Gera estatísticas descritivas (Tabela 1) estratificadas pela variável alvo
+    para um subconjunto de características clínicas essenciais.
+    """
+    df = patients[key_features].copy()
+    df['Desfecho'] = target.map({0: 'Estável (0)', 1: 'Óbito/Readmissão (1)'})
+    
+    num_cols = df.select_dtypes(include='number').columns
+    cat_cols = df.select_dtypes(exclude='number').columns.drop('Desfecho', errors='ignore')
+    
+    print("--- Variáveis Contínuas/Discretas (Média ± Desvio Padrão) ---")
+    num_summary = df.groupby('Desfecho')[num_cols].agg(['mean', 'std']).round(2).T
+    display(num_summary)
+    
+    print("\n--- Variáveis Categóricas (Distribuição Percentual por Desfecho) ---")
+    for col in cat_cols:
+        cross_tab = pd.crosstab(df[col], df['Desfecho'], normalize='columns') * 100
+        display(cross_tab.round(1).astype(str) + '%')
 
-def plot_missing_rate_by_variable(patients):
-    """Calcula estatísticas de dados faltantes e plota o gráfico de barras por variável."""
-    missing_rate = patients.isna().mean().mul(100)
+# def plot_clinical_bivariate(patients, target):
+#     """
+#     Gera boxplots comparativos para identificar o comportamento de variáveis 
+#     críticas e outliers biológicos entre as duas classes do alvo.
+#     """
+#     df = patients.copy()
+#     df['Desfecho'] = target.map({0: 'Estável', 1: 'Óbito/Readmissão'})
     
-    missing_bins = pd.cut(missing_rate, bins=[-0.1, 0, 20, 50, 100], labels=["0%", "(0, 20]%", "(20, 50]%", "(50, 100]%"])
-    print("Nº de variáveis por faixa de faltantes:")
-    print(missing_bins.value_counts().sort_index().to_string())
-    print(f"\nrespiratory.support. — faltantes: {missing_rate['respiratory.support.']:.1f}%")
-    print(f"Internações sem nenhum faltante: {patients.notna().all(axis=1).sum()}")
+#     # Seleção de variáveis clínicas com forte impacto em Insuficiência Cardíaca
+#     vars_to_plot = ['LVEF', 'CCI.score', 'systolic.blood.pressure', 'brain.natriuretic.peptide']
+#     valid_vars = [v for v in vars_to_plot if v in df.columns]
     
-    missing_only = missing_rate[missing_rate > 0].sort_values()
+#     fig, axes = plt.subplots(1, len(valid_vars), figsize=(16, 4))
     
-    fig, ax = plt.subplots(figsize=(7, 0.16 * len(missing_only) + 1))
-    ax.barh(missing_only.index, missing_only.values, color=SERIES_COLOR, height=0.7)
-    for threshold in (20, 50):
-        ax.axvline(threshold, color=MUTED_COLOR, linestyle="--", linewidth=1)
-    ax.set_xlabel("Valores faltantes (%)")
-    ax.set_xlim(0, 100)
-    ax.tick_params(axis="y", labelsize=6)
-    ax.margins(y=0.005)
-    ax.grid(axis="y", visible=False)
-    save_fig(fig, "missing_rate_by_variable")
+#     for ax, var in zip(axes, valid_vars):
+#         sns.boxplot(x='Desfecho', y=var, data=df, ax=ax, palette=[NEUTRAL_COLOR, SERIES_COLOR], showfliers=True)
+#         ax.set_title(var, fontsize=10, fontweight='bold')
+#         ax.set_xlabel('')
+#         ax.set_ylabel('')
+#         ax.grid(axis='y', linestyle='--', alpha=0.6)
+        
+#     plt.tight_layout()
+#     plt.show()
+#     save_fig(fig, "bivariate_clinical_analysis")
+
+def plot_clinical_bivariate(patients, target):
+    """
+    Gera boxplots comparativos para identificar o comportamento de variáveis 
+    críticas e outliers biológicos entre as duas classes do alvo.
+    """
+    df = patients.copy()
+    df["Desfecho"] = target.map({0: "Estável", 1: "Óbito/Readmissão"})
+
+    # Seleção de variáveis clínicas com forte impacto em Insuficiência Cardíaca
+    vars_to_plot = [
+        "LVEF",
+        "CCI.score",
+        "systolic.blood.pressure",
+        "brain.natriuretic.peptide",
+    ]
+    valid_vars = [var for var in vars_to_plot if var in df.columns]
+
+    if not valid_vars:
+        raise ValueError("Nenhuma das variáveis clínicas selecionadas foi encontrada em patients.")
+
+    fig, axes = plt.subplots(
+        1, len(valid_vars), figsize=(16, 4), squeeze=False
+    )
+    axes = axes.ravel()
+
+    for ax, var in zip(axes, valid_vars):
+        sns.boxplot(
+            x="Desfecho",
+            y=var,
+            hue="Desfecho",
+            data=df,
+            ax=ax,
+            palette={"Estável": NEUTRAL_COLOR, "Óbito/Readmissão": SERIES_COLOR},
+            showfliers=True,
+            legend=False,
+        )
+        ax.set_title(var, fontsize=10, fontweight="bold")
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        ax.grid(axis="y", linestyle="--", alpha=0.6)
+
+    plt.tight_layout()
     plt.show()
+    save_fig(fig, "bivariate_clinical_analysis")

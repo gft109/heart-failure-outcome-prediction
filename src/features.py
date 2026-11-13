@@ -88,34 +88,59 @@ def add_missing_indicators(features_df, threshold=20.0):
     return df_out
 
 
+# def build_feature_set(patients_df, drugs_df, variable_groups):
+#     """
+#     Orquestra a construção do conjunto de dados final para modelagem,
+#     executando a limpeza, processamento de fármacos e junção das bases.
+    
+#     Parâmetros:
+#         patients_df (pd.DataFrame): Base clínica.
+#         drugs_df (pd.DataFrame): Base de medicamentos.
+#         variable_groups (dict): Grupos de variáveis.
+        
+#     Retorna:
+#         pd.DataFrame: Conjunto final de atributos (X) pronto para o pipeline de Machine Learning.
+#     """
+#     # 1. Remove vazamento de dados
+#     df_clinical = remove_leakage(patients_df, variable_groups)
+    
+#     # 2. Cria indicadores para exames não solicitados (captura a intenção médica)
+#     df_clinical = add_missing_indicators(df_clinical, threshold=20.0)
+    
+#     # 3. Processa e roda a base de medicamentos
+#     df_drugs_wide = process_drugs(drugs_df)
+    
+#     # 4. Fundo as bases usando o index (inpatient.number)
+#     # Utiliza um left join para manter os pacientes que eventualmente não tomaram medicamentos
+#     X_features = df_clinical.join(df_drugs_wide, how="left")
+    
+#     # Preenche com 0 os medicamentos para os pacientes que não têm registo na base de fármacos
+#     drug_cols = [col for col in X_features.columns if col.startswith("drug_")]
+#     X_features[drug_cols] = X_features[drug_cols].fillna(0).astype(int)
+    
+#     return X_features
+
 def build_feature_set(patients_df, drugs_df, variable_groups):
     """
     Orquestra a construção do conjunto de dados final para modelagem,
     executando a limpeza, processamento de fármacos e junção das bases.
-    
-    Parâmetros:
-        patients_df (pd.DataFrame): Base clínica.
-        drugs_df (pd.DataFrame): Base de medicamentos.
-        variable_groups (dict): Grupos de variáveis.
-        
-    Retorna:
-        pd.DataFrame: Conjunto final de atributos (X) pronto para o pipeline de Machine Learning.
     """
-    # 1. Remove vazamento de dados
-    df_clinical = remove_leakage(patients_df, variable_groups)
-    
-    # 2. Cria indicadores para exames não solicitados (captura a intenção médica)
-    df_clinical = add_missing_indicators(df_clinical, threshold=20.0)
-    
-    # 3. Processa e roda a base de medicamentos
+    # 1. Processa e roda a base de medicamentos (index = inpatient.number)
     df_drugs_wide = process_drugs(drugs_df)
     
-    # 4. Fundo as bases usando o index (inpatient.number)
-    # Utiliza um left join para manter os pacientes que eventualmente não tomaram medicamentos
-    X_features = df_clinical.join(df_drugs_wide, how="left")
+    # 2. Fundo as bases originais usando inpatient.number 
+    # (Definimos temporariamente o inpatient.number como índice na clínica)
+    df_clinical_indexed = patients_df.set_index("inpatient.number")
+    X_features = df_clinical_indexed.join(df_drugs_wide, how="left")
     
     # Preenche com 0 os medicamentos para os pacientes que não têm registo na base de fármacos
     drug_cols = [col for col in X_features.columns if col.startswith("drug_")]
     X_features[drug_cols] = X_features[drug_cols].fillna(0).astype(int)
+    
+    # 3. Remove vazamento de dados (Desfechos, Info Alta, e as "IDs" se ainda existissem como colunas)
+    X_features = remove_leakage(X_features, variable_groups)
+    
+    # 4. Cria indicadores para exames não solicitados (captura a intenção médica)
+    X_features = add_missing_indicators(X_features, threshold=20.0)
     
     return X_features

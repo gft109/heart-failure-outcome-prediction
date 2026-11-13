@@ -52,6 +52,8 @@ Crie uma pasta **`DataBase/`** na raiz do repositório e coloque nela os arquivo
 │   └── main.ipynb             <- Painel executivo e orquestração
 ├── src/                       <- Módulos Python com a lógica do projeto
 │   ├── __init__.py
+│   ├── utils.py               <- Utilidades e configurações globais
+│   ├── eda.py                 <- Análise exploratória de dados
 │   ├── preprocessing.py       <- Limpeza e tratamento de dados ausentes
 │   ├── features.py            <- Seleção e engenharia de atributos
 │   ├── train.py               <- Definição, ajuste e otimização dos modelos
@@ -94,6 +96,8 @@ As figuras são salvas em `results/figures/` e as tabelas em `results/`.
 | Caminho | Conteúdo |
 |---|---|
 | `notebooks/main.ipynb` | Orquestração do fluxo, visualizações e relatórios para o artigo |
+| `src/utils.py` | Centraliza paths, configurações visuais e sementes aleatórias. |
+| `src/eda.py` | Responsável por gerar visualizações e resumos estatísticos. |
 | `src/preprocessing.py` | Funções de limpeza, tratamento de missings e tipagem |
 | `src/features.py` | Funções de engenharia de atributos e seleção de variáveis |
 | `src/train.py` | Pipeline de treinamento e ajuste de hiperparâmetros dos modelos |
