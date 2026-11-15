@@ -1,0 +1,7 @@
+,nested_auc_mean,nested_auc_se,step3_cv_auc,optimism
+LDA,0.669,0.0119,0.708,0.039
+KNN,0.6687,0.0122,0.6905,0.0218
+Regressão logística (Ridge),0.6686,0.0119,0.7081,0.0395
+Random Forest,0.6647,0.0108,0.6931,0.0284
+SVM (kernel RBF),0.6631,0.0115,0.7065,0.0434
+Gradient Boosting,0.6556,0.0107,0.6882,0.0326

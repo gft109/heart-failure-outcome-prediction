@@ -1,0 +1,7 @@
+model,feature_set,auc_mean,auc_se
+Random Forest,todas,0.6713,0.0103
+Random Forest,Lasso,0.661,0.0129
+Random Forest,filtro F,0.6592,0.0118
+Logística sem penalidade,todas,0.6436,0.0146
+Logística sem penalidade,Lasso,0.662,0.0131
+Logística sem penalidade,filtro F,0.6719,0.013

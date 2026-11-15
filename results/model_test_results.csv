@@ -1,0 +1,7 @@
+model,test_auc,auc_ci_low,auc_ci_high,nested_auc_mean
+LDA,0.598,0.537,0.65,0.669
+KNN,0.6,0.542,0.653,0.6687
+Regressão logística (Ridge),0.599,0.538,0.65,0.6686
+Random Forest,0.607,0.547,0.659,0.6647
+SVM (kernel RBF),0.597,0.537,0.648,0.6631
+Gradient Boosting,0.618,0.557,0.67,0.6556

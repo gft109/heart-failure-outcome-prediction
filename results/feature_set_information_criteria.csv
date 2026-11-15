@@ -1,0 +1,7 @@
+feature_set,n_features,deviance,AIC,BIC
+Frequência >= 60%,17.0,1957.7,1993.7,2090.6
+Final (Lasso 1 EP e frequência >= 50%),23.0,1937.3,1985.3,2114.5
+"Lasso, regra de 1 erro padrão",24.0,1937.1,1987.1,2121.6
+Final + destaques do Random Forest,26.0,1926.5,1980.5,2125.8
+"Lasso, maior AUC",42.0,1885.2,1971.2,2202.6
+Todos após o filtro,168.0,1790.4,2128.4,3037.9

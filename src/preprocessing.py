@@ -92,38 +92,12 @@ def create_target(patients_df):
     
     return target
 
-def get_variable_types(df):
-    """
-    Classifica as variáveis do DataFrame em categorias de tipologia
-    para alimentar os pipelines de pré-processamento.
-    
-    Parâmetros:
-        df (pd.DataFrame): O DataFrame a analisar.
-        
-    Retorna:
-        dict: Dicionário com as listas de colunas 'binarias', 'categoricas', 
-              'continuas' e 'discretas'.
-    """
-    binary = []
-    categorical = []
-    continuous = []
-    discrete = []
-    
-    for col in df.columns:
-        n_unique = df[col].dropna().nunique()
-        if n_unique <= 2:
-            binary.append(col)
-        elif pd.api.types.is_numeric_dtype(df[col]):
-            if n_unique > 10:
-                continuous.append(col)
-            else:
-                discrete.append(col)
-        else:
-            categorical.append(col)
-            
-    return {
-        "binarias": binary,
-        "categoricas": categorical,
-        "continuas": continuous,
-        "discretas": discrete
-    }
+def split_train_test(X, y, test_size=0.20):
+    """Stratified hold-out split, done once before any data-driven step.
+
+    The test set is only used for the final assessment (step 4); feature
+    selection, imputation and tuning see the training set only."""
+    from sklearn.model_selection import train_test_split
+    from src.utils import RANDOM_STATE
+
+    return train_test_split(X, y, test_size=test_size, stratify=y, random_state=RANDOM_STATE)
