@@ -47,18 +47,19 @@ Crie uma pasta **`DataBase/`** na raiz do repositório e coloque nela os arquivo
 │   ├── LICENSE.txt
 │   └── SHA256SUMS.txt
 ├── notebooks/
-│   ├── 01_analise_exploratoria.ipynb                     <- Etapa 1: análise exploratória
-│   ├── 02_selecao_atributos.ipynb     <- Etapa 2: extração e seleção de atributos
-│   ├── 03_treinamento_modelos.ipynb   <- Etapa 3: modelos lineares e não lineares
-│   └── 04_avaliacao_modelos.ipynb     <- Etapa 4: avaliação e seleção de modelos
+│   ├── 01_analise_exploratoria.ipynb  <- Etapa 1: análise exploratória
+│   ├── 02_tratamento_dados.ipynb      <- Etapa 2: tratamento dos dados
+│   ├── 03_modelos.ipynb               <- Etapa 3: árvore, Lasso e Random Forest
+│   ├── 04_avaliacao.ipynb             <- Etapa 4: avaliação no teste
+│   └── 05_limpeza_de_resultados.ipynb <- Opcional: apaga a pasta results/
 ├── src/                       <- Módulos Python com a lógica do projeto
 │   ├── __init__.py
 │   ├── utils.py               <- Utilidades e configurações globais
 │   ├── eda.py                 <- Análise exploratória de dados
 │   ├── preprocessing.py       <- Carregamento, variável alvo e divisão treino/teste
-│   ├── features.py            <- Construção da matriz de atributos e seleção
-│   ├── train.py               <- Modelos candidatos e ajuste de hiperparâmetros
-│   └── evaluate.py            <- Avaliação no conjunto de teste e análise de robustez
+│   ├── features.py            <- Tratamento dos dados (matriz de atributos e alvo)
+│   ├── train.py               <- Os três modelos e o ajuste de hiperparâmetros
+│   └── evaluate.py            <- Avaliação no teste, comparação com o acaso e interpretação
 ├── results/                   <- Tabelas e figuras geradas para o artigo
 ├── requirements.txt
 └── README.md
@@ -89,11 +90,11 @@ nbstripout --install
 Depois, abra os notebooks no VS Code, selecione o interpretador `.venv` como kernel e rode todas as células, **nesta ordem**:
 
 1. `notebooks/01_analise_exploratoria.ipynb`
-2. `notebooks/02_selecao_atributos.ipynb` (cerca de 3 minutos)
-3. `notebooks/03_treinamento_modelos.ipynb`
-4. `notebooks/04_avaliacao_modelos.ipynb` (cerca de 6 minutos)
+2. `notebooks/02_tratamento_dados.ipynb`
+3. `notebooks/03_modelos.ipynb` (cerca de 30 segundos)
+4. `notebooks/04_avaliacao.ipynb` (cerca de 1 minuto)
 
-A ordem importa: o notebook 02 grava a lista de atributos selecionados em `results/selected_features.csv`, que os notebooks 03 e 04 leem. Fora do VS Code, use `jupyter lab` com o ambiente ativo.
+Cada notebook reconstrói os dados com as mesmas funções de `src/`, então também podem ser rodados isoladamente. Fora do VS Code, use `jupyter lab` com o ambiente ativo.
 
 As figuras são salvas em `results/figures/` e as tabelas em `results/`.
 
@@ -104,15 +105,15 @@ As figuras são salvas em `results/figures/` e as tabelas em `results/`.
 | Caminho | Conteúdo |
 |---|---|
 | `notebooks/01_analise_exploratoria.ipynb` | Etapa 1: análise exploratória dos dados |
-| `notebooks/02_selecao_atributos.ipynb` | Etapa 2: matriz de atributos, divisão treino/teste e seleção de atributos |
-| `notebooks/03_treinamento_modelos.ipynb` | Etapa 3: ajuste dos modelos por validação cruzada |
-| `notebooks/04_avaliacao_modelos.ipynb` | Etapa 4: escolha do modelo, avaliação no teste e robustez |
+| `notebooks/02_tratamento_dados.ipynb` | Etapa 2: vazamento, faltantes, codificação das qualitativas |
+| `notebooks/03_modelos.ipynb` | Etapa 3: divisão treino/teste e ajuste dos três modelos por validação cruzada |
+| `notebooks/04_avaliacao.ipynb` | Etapa 4: escolha do modelo, teste comparado ao acaso, interpretação |
 | `src/utils.py` | Centraliza paths, configurações visuais e sementes aleatórias. |
 | `src/eda.py` | Responsável por gerar visualizações e resumos estatísticos. |
 | `src/preprocessing.py` | Carregamento dos dados, grupos de variáveis, variável alvo e divisão treino/teste |
-| `src/features.py` | Construção da matriz de atributos (faltantes, codificação) e seleção de atributos |
-| `src/train.py` | Modelos candidatos e ajuste de hiperparâmetros |
-| `src/evaluate.py` | Métricas no conjunto de teste, curvas ROC e análise por divisões repetidas |
+| `src/features.py` | Tratamento dos dados: matriz de atributos e alvo |
+| `src/train.py` | Árvore de decisão, regressão logística Lasso e Random Forest, com ajuste por validação cruzada |
+| `src/evaluate.py` | Métricas no teste com referências de acaso, curvas ROC e interpretação |
 | `results/` | Tabelas (CSV) e figuras (`figures/`) geradas pelo notebook |
 | `requirements.txt` | Dependências com versões fixadas |
 

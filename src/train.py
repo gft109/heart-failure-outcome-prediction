@@ -1,109 +1,83 @@
 """
-Model definition and hyperparameter tuning (step 3).
+Step 3: the three models and their hyperparameter tuning.
 
-Every model is a Pipeline (median imputation -> standardization -> classifier)
-so that all data-driven preprocessing is refitted inside each training fold.
+Each model is a Pipeline, so the median imputation (and the scaling, for the
+Lasso) is refitted on the training part of every fold. All three use
+class_weight="balanced", which compensates the 41.5% / 58.5% class ratio.
 """
 
 import numpy as np
 import pandas as pd
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 
 from src.utils import RANDOM_STATE
 
 N_SPLITS = 10
 
 
-def _pipeline(classifier):
-    return Pipeline([
-        ("impute", SimpleImputer(strategy="median")),
-        ("scale", StandardScaler()),
-        ("model", classifier),
-    ])
-
-
 def get_models():
-    """Candidate models and their hyperparameter grids.
-
-    Returns {name: (kind, pipeline, grid)}, kind being "linear" or "non-linear"."""
+    """{name: (kind, pipeline, hyperparameter grid)}."""
+    impute = ("impute", SimpleImputer(strategy="median"))
     return {
-        "Regressão logística (Ridge)": (
-            "linear",
-            _pipeline(LogisticRegression(max_iter=5000)),
-            {"model__C": np.logspace(-3, 2, 11)},
+        "Árvore de decisão": (
+            "não linear",
+            Pipeline([impute, ("model", DecisionTreeClassifier(class_weight="balanced", random_state=RANDOM_STATE))]),
+            {"model__ccp_alpha": [0.0, 0.001, 0.002, 0.003, 0.004, 0.005, 0.0075, 0.01, 0.015, 0.02]},
         ),
-        "LDA": (
+        "Regressão logística Lasso": (
             "linear",
-            _pipeline(LinearDiscriminantAnalysis(solver="lsqr")),
-            {"model__shrinkage": [None, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]},
-        ),
-        "SVM (kernel RBF)": (
-            "non-linear",
-            _pipeline(SVC(kernel="rbf")),
-            {"model__C": [0.01, 0.1, 1, 10], "model__gamma": [0.001, 0.003, 0.01, 0.03, 0.1]},
+            Pipeline([impute, ("scale", StandardScaler()),
+                      ("model", LogisticRegression(l1_ratio=1.0, solver="liblinear", class_weight="balanced",
+                                                   random_state=RANDOM_STATE))]),
+            {"model__C": list(np.logspace(-2.5, 0, 11))},
         ),
         "Random Forest": (
-            "non-linear",
-            _pipeline(RandomForestClassifier(n_estimators=500, n_jobs=1, random_state=RANDOM_STATE)),
-            {"model__max_features": [2, 4, 8], "model__min_samples_leaf": [5, 15, 30]},
-        ),
-        "Gradient Boosting": (
-            "non-linear",
-            _pipeline(GradientBoostingClassifier(subsample=0.8, random_state=RANDOM_STATE)),
-            {"model__n_estimators": [100, 300], "model__learning_rate": [0.01, 0.05],
-             "model__max_depth": [1, 2, 3]},
-        ),
-        "KNN": (
-            "non-linear",
-            _pipeline(KNeighborsClassifier()),
-            {"model__n_neighbors": [5, 15, 25, 51, 75, 101, 151], "model__weights": ["uniform", "distance"]},
+            "não linear",
+            Pipeline([impute, ("model", RandomForestClassifier(n_estimators=500, class_weight="balanced",
+                                                               n_jobs=-1, random_state=RANDOM_STATE))]),
+            {"model__max_features": ["sqrt", 0.05, 0.2], "model__min_samples_leaf": [5, 15, 30]},
         ),
     }
 
 
-def tune_models(X_train, y_train, models=None):
-    """Tune every model by stratified 10-fold cross-validation (AUC) on the
-    training set and refit the best configuration on the whole training set.
+def tune_models(X_train, y_train):
+    """Grid search with stratified 10-fold cross-validation (AUC) on the
+    training set; the best configuration of each model is refitted on the
+    whole training set.
 
     Returns (summary table, {name: fitted GridSearchCV})."""
-    models = models or get_models()
     folds = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
-
     rows, searches = [], {}
-    for name, (kind, pipeline, grid) in models.items():
-        search = GridSearchCV(pipeline, grid, scoring="roc_auc", cv=folds, n_jobs=-1, return_train_score=True)
-        search.fit(X_train, y_train)
+    for name, (kind, pipeline, grid) in get_models().items():
+        search = GridSearchCV(pipeline, grid, scoring="roc_auc", cv=folds, n_jobs=-1,
+                              return_train_score=True).fit(X_train, y_train)
         best = search.best_index_
-        results = search.cv_results_
         rows.append({
-            "model": name,
-            "kind": kind,
-            "cv_auc_mean": results["mean_test_score"][best],
-            "cv_auc_se": results["std_test_score"][best] / np.sqrt(N_SPLITS),
-            "train_auc_mean": results["mean_train_score"][best],
-            "n_configurations": len(results["params"]),
-            "best_params": {k.replace("model__", ""): v for k, v in search.best_params_.items()},
+            "modelo": name,
+            "tipo": kind,
+            "auc_cv": search.cv_results_["mean_test_score"][best],
+            "auc_cv_erro_padrao": search.cv_results_["std_test_score"][best] / np.sqrt(N_SPLITS),
+            "auc_treino": search.cv_results_["mean_train_score"][best],
+            "melhores_hiperparametros": {k.replace("model__", ""): v for k, v in search.best_params_.items()},
         })
         searches[name] = search
-
-    summary = pd.DataFrame(rows).set_index("model")
-    summary[["cv_auc_mean", "cv_auc_se", "train_auc_mean"]] = summary[["cv_auc_mean", "cv_auc_se", "train_auc_mean"]].round(4)
-    return summary, searches
+    return pd.DataFrame(rows).set_index("modelo").round(3), searches
 
 
-def cv_fold_scores(searches):
-    """AUC of the best configuration of each model in each validation fold
-    (same folds for all models, so they can be compared pairwise)."""
-    scores = {}
-    for name, search in searches.items():
-        best = search.best_index_
-        scores[name] = [search.cv_results_[f"split{i}_test_score"][best] for i in range(N_SPLITS)]
-    return pd.DataFrame(scores, index=[f"fold {i + 1}" for i in range(N_SPLITS)])
+def model_sizes(searches, n_features):
+    """How big each fitted model is: leaves of the tree, features kept by the
+    Lasso, trees in the forest."""
+    tree = searches["Árvore de decisão"].best_estimator_.named_steps["model"]
+    lasso = searches["Regressão logística Lasso"].best_estimator_.named_steps["model"]
+    forest = searches["Random Forest"].best_estimator_.named_steps["model"]
+    return pd.Series({
+        "Árvore de decisão": f"{tree.get_n_leaves()} folhas, profundidade {tree.get_depth()}",
+        "Regressão logística Lasso": f"{int((lasso.coef_ != 0).sum())} de {n_features} atributos mantidos",
+        "Random Forest": f"{len(forest.estimators_)} árvores, todos os {n_features} atributos",
+    }, name="tamanho do modelo")

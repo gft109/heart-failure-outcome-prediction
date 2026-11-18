@@ -1,7 +1,6 @@
-model,test_auc,auc_ci_low,auc_ci_high,nested_auc_mean
-LDA,0.598,0.537,0.65,0.669
-KNN,0.6,0.542,0.653,0.6687
-Regressão logística (Ridge),0.599,0.538,0.65,0.6686
-Random Forest,0.607,0.547,0.659,0.6647
-SVM (kernel RBF),0.597,0.537,0.648,0.6631
-Gradient Boosting,0.618,0.557,0.67,0.6556
+,auc,auc_ic95,acuracia_balanceada,acuracia_balanceada_ic95,acuracia,acuracia_ic95,sensibilidade,especificidade,valor_preditivo_positivo,melhor_que_o_acaso,acuracia_acima_da_majoritaria
+Acaso: sempre a classe majoritária,0.5,0.500 – 0.500,0.5,0.500 – 0.500,0.585,0.535 – 0.634,0.0,1.0,,False,False
+Acaso: sorteio estratificado,0.487,0.437 – 0.536,0.487,0.437 – 0.536,0.5,0.450 – 0.547,0.413,0.562,0.401,False,False
+Árvore de decisão,0.572,0.517 – 0.626,0.568,0.525 – 0.609,0.522,0.470 – 0.572,0.838,0.298,0.459,True,False
+Regressão logística Lasso,0.633,0.578 – 0.689,0.59,0.542 – 0.640,0.6,0.552 – 0.649,0.533,0.647,0.517,True,False
+Random Forest,0.626,0.572 – 0.680,0.574,0.529 – 0.621,0.602,0.557 – 0.649,0.407,0.74,0.527,True,False

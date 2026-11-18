@@ -1,7 +1,4 @@
-model,kind,cv_auc_mean,cv_auc_se,train_auc_mean,n_configurations
-Regressão logística (Ridge),linear,0.7081,0.0111,0.7188,11
-LDA,linear,0.708,0.011,0.7214,8
-SVM (kernel RBF),non-linear,0.7065,0.011,0.746,20
-Random Forest,non-linear,0.6931,0.0089,0.8367,9
-Gradient Boosting,non-linear,0.6882,0.0099,0.7347,12
-KNN,non-linear,0.6905,0.0096,0.7074,14
+modelo,tipo,auc_cv,auc_cv_erro_padrao,auc_treino
+Árvore de decisão,não linear,0.588,0.008,0.656
+Regressão logística Lasso,linear,0.673,0.012,0.747
+Random Forest,não linear,0.676,0.011,1.0

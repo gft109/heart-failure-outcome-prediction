@@ -1,244 +1,273 @@
 """
-Model assessment on the held-out test set (step 4).
+Step 4: assessment on the held-out test set.
+
+Every metric is compared with two chance references, so that a model that
+only reproduces the class ratio is not mistaken for a useful one:
+  - "sempre a classe majoritária": always predicts "no event";
+  - "sorteio estratificado": random guesses in the class proportions.
+AUC and balanced accuracy are 0.5 for both references, whatever the class
+ratio; accuracy is not (the majority reference reaches 58.5%).
 """
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
+from sklearn.dummy import DummyClassifier
+from sklearn.inspection import permutation_importance
+from sklearn.metrics import balanced_accuracy_score, confusion_matrix, roc_auc_score, roc_curve
 
 from src.utils import RANDOM_STATE
 
-
-def predict_scores(model, X):
-    """Continuous score of the positive class (probability when available,
-    otherwise the decision function, as in the SVM)."""
-    if hasattr(model, "predict_proba"):
-        return model.predict_proba(X)[:, 1]
-    return model.decision_function(X)
+N_BOOTSTRAP = 2000
 
 
-def bootstrap_auc_interval(y_true, scores, n_resamples=2000, level=0.95):
-    """Percentile bootstrap confidence interval of the AUC (Aula 05): the test
-    set is resampled with replacement and the AUC recomputed each time."""
-    rng = np.random.default_rng(RANDOM_STATE)
-    y_true, scores = np.asarray(y_true), np.asarray(scores)
+def chance_references(X_train, y_train):
+    """The two chance models, fitted on the training set."""
+    return {
+        "Acaso: sempre a classe majoritária": DummyClassifier(strategy="most_frequent").fit(X_train, y_train),
+        "Acaso: sorteio estratificado": DummyClassifier(strategy="stratified", random_state=RANDOM_STATE).fit(X_train, y_train),
+    }
+
+
+def _bootstrap_ci(y_true, scores, predicted, rng):
+    """95% percentile bootstrap intervals of AUC, balanced accuracy and accuracy."""
     n = len(y_true)
-    aucs = []
-    while len(aucs) < n_resamples:
+    values = {"auc": [], "bacc": [], "acc": []}
+    while len(values["auc"]) < N_BOOTSTRAP:
         rows = rng.integers(0, n, n)
         if y_true[rows].min() == y_true[rows].max():
-            continue  # resample with a single class: AUC undefined
-        aucs.append(roc_auc_score(y_true[rows], scores[rows]))
-    tail = (1 - level) / 2
-    return float(np.quantile(aucs, tail)), float(np.quantile(aucs, 1 - tail))
+            continue
+        values["auc"].append(roc_auc_score(y_true[rows], scores[rows]))
+        values["bacc"].append(balanced_accuracy_score(y_true[rows], predicted[rows]))
+        values["acc"].append((y_true[rows] == predicted[rows]).mean())
+    return {k: np.quantile(v, [0.025, 0.975]) for k, v in values.items()}
 
 
-def evaluate_on_test(searches, X_test, y_test):
-    """Test-set AUC (with bootstrap confidence interval) of every tuned model,
-    each already refitted on the whole training set."""
-    rows = []
-    for name, search in searches.items():
-        scores = predict_scores(search.best_estimator_, X_test)
-        low, high = bootstrap_auc_interval(y_test, scores)
-        rows.append({"model": name, "test_auc": roc_auc_score(y_test, scores),
-                     "auc_ci_low": low, "auc_ci_high": high})
-    return pd.DataFrame(rows).set_index("model").round(3)
-
-
-def choose_threshold_cv(model, X_train, y_train, n_splits=10):
-    """Decision threshold chosen without the test set: out-of-fold predicted
-    probabilities on the training set, then the cut-off that maximizes
-    Youden's index (sensitivity + specificity - 1)."""
-    from sklearn.model_selection import StratifiedKFold, cross_val_predict
-
-    folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
-    scores = cross_val_predict(model, X_train, y_train, cv=folds, method="predict_proba")[:, 1]
-    fpr, tpr, thresholds = roc_curve(y_train, scores)
-    return float(thresholds[np.argmax(tpr - fpr)])
-
-
-def threshold_metrics(model, X_test, y_test, thresholds):
-    """Test-set classification metrics of one model at each decision threshold.
-
-    `thresholds` maps a label to a probability cut-off."""
-    scores = predict_scores(model, X_test)
+def test_metrics(models, X_test, y_test):
+    """Test-set metrics of each model (decision threshold 0.5, i.e. the
+    model's own prediction), with 95% bootstrap intervals for AUC and
+    balanced accuracy and accuracy. `melhor_que_o_acaso` is True when the
+    lower limits of the AUC and balanced-accuracy intervals are above 0.5;
+    `acuracia_acima_da_majoritaria` when the lower limit of the accuracy
+    interval is above the majority-class rate of the test set."""
     y_true = np.asarray(y_test)
+    majority_rate = max(y_true.mean(), 1 - y_true.mean())
+    rng = np.random.default_rng(RANDOM_STATE)
     rows = {}
-    for label, threshold in thresholds.items():
-        predicted = scores >= threshold
-        tp = int((predicted & (y_true == 1)).sum()); fn = int((~predicted & (y_true == 1)).sum())
-        tn = int((~predicted & (y_true == 0)).sum()); fp = int((predicted & (y_true == 0)).sum())
-        sensitivity, specificity = tp / (tp + fn), tn / (tn + fp)
-        rows[label] = {
-            "threshold": threshold,
-            "sensitivity": sensitivity,
-            "specificity": specificity,
-            "balanced_accuracy": (sensitivity + specificity) / 2,
-            "accuracy": (tp + tn) / len(y_true),
-            "positive_predictive_value": tp / (tp + fp),
-            "negative_predictive_value": tn / (tn + fn),
+    for name, model in models.items():
+        scores = model.predict_proba(X_test)[:, 1]
+        predicted = model.predict(X_test)
+        ci = _bootstrap_ci(y_true, scores, predicted, rng)
+        tn, fp, fn, tp = confusion_matrix(y_true, predicted, labels=[0, 1]).ravel()
+        rows[name] = {
+            "auc": roc_auc_score(y_true, scores),
+            "auc_ic95": f"{ci['auc'][0]:.3f} – {ci['auc'][1]:.3f}",
+            "acuracia_balanceada": balanced_accuracy_score(y_true, predicted),
+            "acuracia_balanceada_ic95": f"{ci['bacc'][0]:.3f} – {ci['bacc'][1]:.3f}",
+            "acuracia": (tp + tn) / len(y_true),
+            "acuracia_ic95": f"{ci['acc'][0]:.3f} – {ci['acc'][1]:.3f}",
+            "sensibilidade": tp / (tp + fn),
+            "especificidade": tn / (tn + fp),
+            "valor_preditivo_positivo": tp / (tp + fp) if tp + fp else np.nan,
+            "melhor_que_o_acaso": bool(ci["auc"][0] > 0.5 and ci["bacc"][0] > 0.5),
+            "acuracia_acima_da_majoritaria": bool(ci["acc"][0] > majority_rate),
         }
-    return pd.DataFrame(rows).T.round(3)
+    return pd.DataFrame(rows).T.infer_objects().round(3)
 
 
-def confusion_table(model, X_test, y_test, threshold=0.5):
-    """Confusion matrix of one model at a given threshold, as a labelled table."""
-    predicted = (predict_scores(model, X_test) >= threshold).astype(int)
-    matrix = confusion_matrix(y_test, predicted)
+def choose_model(cv_results, simplest_first):
+    """Model with the best cross-validated AUC; among the models within one
+    standard error of it, the simplest one (order given by `simplest_first`)."""
+    best = cv_results.loc[cv_results["auc_cv"].idxmax()]
+    tied = cv_results.index[cv_results["auc_cv"] >= best["auc_cv"] - best["auc_cv_erro_padrao"]]
+    return next(name for name in simplest_first if name in tied)
+
+
+def confusion_table(model, X_test, y_test):
+    """Confusion matrix as a labelled table."""
+    matrix = confusion_matrix(y_test, model.predict(X_test), labels=[0, 1])
     return pd.DataFrame(matrix, index=["Real: sem evento", "Real: evento"],
                         columns=["Previsto: sem evento", "Previsto: evento"])
 
 
-def logistic_odds_ratios(model, feature_names):
-    """Coefficients of a fitted logistic pipeline as odds ratios per standard
-    deviation of each feature, sorted by absolute effect."""
-    coef = pd.Series(model.named_steps["model"].coef_[0], index=feature_names, name="coefficient")
-    table = coef.reindex(coef.abs().sort_values(ascending=False).index).to_frame()
-    table["odds_ratio_per_sd"] = np.exp(table["coefficient"])
-    return table.round(3)
-
-
-def plot_roc_curves(searches, X_test, y_test, highlight):
-    """ROC curves of all models on the test set; `highlight` is drawn in the
-    series color and the others in grey."""
+def plot_roc_curves(models, X_test, y_test):
+    """ROC curves on the test set; the diagonal is the chance level."""
     import matplotlib.pyplot as plt
-    from src.utils import SERIES_COLOR, NEUTRAL_COLOR, MUTED_COLOR
+    from src.utils import MUTED_COLOR
 
+    colors = ["#a3a29c", "#2a78d6", "#d6672a"]
     fig, ax = plt.subplots(figsize=(3.5, 3.3))
-    ax.plot([0, 1], [0, 1], color=MUTED_COLOR, linestyle=":", linewidth=0.8)
-    for name, search in searches.items():
-        if name == highlight:
-            continue
-        fpr, tpr, _ = roc_curve(y_test, predict_scores(search.best_estimator_, X_test))
-        ax.plot(fpr, tpr, color=NEUTRAL_COLOR, linewidth=0.8)
-    ax.plot([], [], color=NEUTRAL_COLOR, linewidth=0.8, label="Demais modelos")
-
-    scores = predict_scores(searches[highlight].best_estimator_, X_test)
-    fpr, tpr, _ = roc_curve(y_test, scores)
-    ax.plot(fpr, tpr, color=SERIES_COLOR, linewidth=1.6,
-            label=f"{highlight} (AUC = {roc_auc_score(y_test, scores):.2f})".replace(".", ","))
-
+    ax.plot([0, 1], [0, 1], color=MUTED_COLOR, linestyle=":", linewidth=0.8, label="Acaso (AUC = 0,50)")
+    for (name, model), color in zip(models.items(), colors):
+        scores = model.predict_proba(X_test)[:, 1]
+        fpr, tpr, _ = roc_curve(y_test, scores)
+        label = f"{name} (AUC = {roc_auc_score(y_test, scores):.2f})".replace(".", ",")
+        ax.plot(fpr, tpr, color=color, linewidth=1.3, label=label)
     ax.set_xlabel("1 − especificidade")
     ax.set_ylabel("Sensibilidade")
     ax.set_aspect("equal")
-    ax.legend(loc="lower right", fontsize=6, frameon=False)
+    ax.legend(loc="lower right", fontsize=5.5, frameon=False)
     return fig
 
 
-def _select_tune_score(X_fit, y_fit, X_valid, y_valid, model_names):
-    """One honest round: the whole feature selection and the hyperparameter
-    tuning are done on (X_fit, y_fit) only; the AUC of each tuned model is then
-    measured on (X_valid, y_valid), which took part in no decision."""
-    from sklearn.model_selection import GridSearchCV, StratifiedKFold
-    from src import features, train
-
-    selected, C = features.select_features(X_fit, y_fit)
-
-    models = train.get_models()
-    folds = StratifiedKFold(n_splits=train.N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
-    result = {"n_features": len(selected), "lasso_C": C, "features": selected, "cv_auc": {}, "auc": {}}
-    for name in model_names:
-        _, pipeline, grid = models[name]
-        search = GridSearchCV(pipeline, grid, scoring="roc_auc", cv=folds).fit(X_fit[selected], y_fit)
-        result["cv_auc"][name] = search.best_score_
-        result["auc"][name] = roc_auc_score(y_valid, predict_scores(search.best_estimator_, X_valid[selected]))
-    return result
+def lasso_coefficients(lasso_pipeline, feature_names, top=15):
+    """Non-zero Lasso coefficients (standardized scale) as odds ratios per
+    standard deviation, largest effects first."""
+    coef = pd.Series(lasso_pipeline.named_steps["model"].coef_[0], index=feature_names)
+    coef = coef[coef != 0]
+    coef = coef.reindex(coef.abs().sort_values(ascending=False).index).head(top)
+    return pd.DataFrame({"coeficiente": coef, "razao_de_chances_por_dp": np.exp(coef)}).round(3)
 
 
-def nested_cv_model_comparison(X_train, y_train, model_names=None):
-    """Nested cross-validation on the training set, for an unbiased comparison
-    of the models.
-
-    Outer loop: the same stratified 10 folds used in step 3. In each outer
-    fold, feature selection and tuning are redone with the other nine folds
-    (inner loop) and every model is scored on the fold left out.
-
-    Returns (AUC of each model in each outer fold, number of features selected
-    in each outer fold)."""
-    from joblib import Parallel, delayed
-    from sklearn.model_selection import StratifiedKFold
-    from src import train
-
-    model_names = model_names or list(train.get_models())
-    outer = StratifiedKFold(n_splits=train.N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
-    rounds = Parallel(n_jobs=-1)(
-        delayed(_select_tune_score)(X_train.iloc[fit], y_train.iloc[fit], X_train.iloc[valid], y_train.iloc[valid], model_names)
-        for fit, valid in outer.split(X_train, y_train))
-
-    index = [f"fold {i + 1}" for i in range(len(rounds))]
-    outer_scores = pd.DataFrame([r["auc"] for r in rounds], index=index)
-    n_features = pd.Series([r["n_features"] for r in rounds], index=index, name="n_features")
-    return outer_scores, n_features
+def forest_importance(forest_pipeline, X_test, y_test, top=15):
+    """Permutation importance of the Random Forest on the test set: how much
+    the AUC drops when one feature is shuffled."""
+    result = permutation_importance(forest_pipeline, X_test, y_test, scoring="roc_auc",
+                                    n_repeats=10, random_state=RANDOM_STATE, n_jobs=-1)
+    table = pd.DataFrame({"queda_de_auc": result.importances_mean, "desvio_padrao": result.importances_std},
+                         index=X_test.columns)
+    return table.sort_values("queda_de_auc", ascending=False).head(top).round(4)
 
 
-def summarize_nested_cv(outer_scores, step3_cv_auc):
-    """Mean nested AUC and its standard error per model, next to the AUC from
-    the plain cross-validation of step 3 (features selected with the whole
-    training set). Both use the same folds, so `optimism` (their difference)
-    is the part of the step-3 AUC that came from selecting the features with
-    the validation folds in sight."""
-    n = len(outer_scores)
-    table = pd.DataFrame({
-        "nested_auc_mean": outer_scores.mean(),
-        "nested_auc_se": outer_scores.std(ddof=1) / np.sqrt(n),
-        "step3_cv_auc": step3_cv_auc,
-    })
-    table["optimism"] = table["step3_cv_auc"] - table["nested_auc_mean"]
-    return table.sort_values("nested_auc_mean", ascending=False).round(4)
-
-
-def paired_differences(outer_scores, reference):
-    """Fold-by-fold AUC difference of each model to `reference` (same folds for
-    all models): mean difference and its standard error. A difference smaller
-    than about two standard errors is not distinguishable from noise."""
-    n = len(outer_scores)
-    diff = outer_scores.drop(columns=reference).sub(outer_scores[reference], axis=0)
-    return pd.DataFrame({
-        "auc_difference_mean": diff.mean(),
-        "auc_difference_se": diff.std(ddof=1) / np.sqrt(n),
-        "folds_better_than_reference": (diff > 0).sum(),
-    }).round(4)
-
-
-def _assess_one_split(X, y, seed, model_name):
-    """One round: new 80/20 split, feature selection and tuning redone on the
-    training part only, AUC measured on the test part."""
-    from sklearn.model_selection import train_test_split
-
-    X_fit, X_holdout, y_fit, y_holdout = train_test_split(
-        X, y, test_size=0.20, stratify=y, random_state=seed)
-    r = _select_tune_score(X_fit, y_fit, X_holdout, y_holdout, [model_name])
-    return {"seed": seed, "n_features": r["n_features"], "lasso_C": r["lasso_C"],
-            "cv_auc": r["cv_auc"][model_name], "test_auc": r["auc"][model_name], "features": r["features"]}
-
-
-def repeated_split_assessment(X, y, model_name, seeds):
-    """Repeat the whole procedure (split -> feature selection -> tuning ->
-    test) for several random splits, to estimate the expected performance of
-    the method and how much it depends on the particular split.
-
-    Returns (table with one row per split, selection share of each feature)."""
-    from joblib import Parallel, delayed
-
-    rounds = Parallel(n_jobs=-1)(delayed(_assess_one_split)(X, y, seed, model_name) for seed in seeds)
-
-    counts = pd.Series([f for r in rounds for f in r["features"]]).value_counts()
-    feature_share = (counts / len(rounds)).rename("share_of_splits").round(3)
-    table = pd.DataFrame([{k: v for k, v in r.items() if k != "features"} for r in rounds]).set_index("seed")
-    return table.round(4), feature_share
-
-
-def plot_repeated_split_auc(test_aucs, official_auc):
-    """Histogram of the test AUC across the repeated splits, with the mean and
-    the official test set marked."""
+def plot_tree(tree_pipeline, feature_names):
+    """Drawing of the pruned decision tree."""
     import matplotlib.pyplot as plt
-    from src.utils import SERIES_COLOR, MUTED_COLOR, NEUTRAL_LIGHT_COLOR
+    from sklearn.tree import plot_tree as sk_plot_tree
 
-    fig, ax = plt.subplots(figsize=(3.5, 2.4))
-    ax.hist(test_aucs, bins=12, color=NEUTRAL_LIGHT_COLOR, edgecolor=MUTED_COLOR, linewidth=0.5)
-    ax.axvline(np.mean(test_aucs), color=MUTED_COLOR, linestyle="--", linewidth=1, label="média das divisões")
-    ax.axvline(official_auc, color=SERIES_COLOR, linewidth=1.4, label="divisão usada no trabalho")
-    ax.set_xlabel("AUC no conjunto de teste")
-    ax.set_ylabel("Nº de divisões")
-    ax.legend(fontsize=6, frameon=False, loc="upper right")
+    tree = tree_pipeline.named_steps["model"]
+    fig, ax = plt.subplots(figsize=(7.2, 3.6))
+    boxes = sk_plot_tree(tree, feature_names=list(feature_names), class_names=["sem evento", "evento"],
+                         filled=True, impurity=False, proportion=True, rounded=True, fontsize=5, ax=ax)
+    # scikit-learn writes the box labels in English
+    labels = {"samples = ": "internações = ", "value = ": "proporção = ", "class = ": "classe = "}
+    for box in boxes:
+        text = box.get_text()
+        for english, portuguese in labels.items():
+            text = text.replace(english, portuguese)
+        box.set_text(text)
+    for text in ax.texts:
+        if text.get_text().strip() in ("True", "False"):
+            text.set_text(text.get_text().replace("True", "Sim").replace("False", "Não"))
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Clinical use: the model would flag patients for closer follow-up, so a
+# missed event (false negative) costs more than an unnecessary follow-up.
+# ---------------------------------------------------------------------------
+
+def clinical_threshold(model, X_train, y_train, target_sensitivity=0.90, n_splits=10):
+    """Threshold that reaches `target_sensitivity` on the training set, using
+    out-of-fold predicted probabilities (the test set is not used)."""
+    from sklearn.model_selection import StratifiedKFold, cross_val_predict
+
+    folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
+    scores = cross_val_predict(model, X_train, y_train, cv=folds, method="predict_proba")[:, 1]
+    return float(np.quantile(scores[np.asarray(y_train) == 1], 1 - target_sensitivity))
+
+
+def threshold_comparison(model, X_test, y_test, thresholds):
+    """Test-set consequences of each decision threshold, next to the
+    'flag everyone' strategy. `thresholds` maps a label to a cut-off."""
+    y_true = np.asarray(y_test)
+    scores = model.predict_proba(X_test)[:, 1]
+    rows = {}
+    for label, threshold in {**thresholds, "Sinalizar todos": 0.0}.items():
+        flagged = scores >= threshold
+        tp = int((flagged & (y_true == 1)).sum()); fn = int((~flagged & (y_true == 1)).sum())
+        tn = int((~flagged & (y_true == 0)).sum()); fp = int((flagged & (y_true == 0)).sum())
+        rows[label] = {
+            "limiar": threshold,
+            "sensibilidade": tp / (tp + fn),
+            "especificidade": tn / (tn + fp),
+            "sinalizados": tp + fp,
+            "eventos_perdidos": fn,
+            "nao_sinalizados": tn + fn,
+            "sem_evento_entre_nao_sinalizados": tn / (tn + fn) if tn + fn else np.nan,
+        }
+    return pd.DataFrame(rows).T.infer_objects().round(3)
+
+
+def confusion_at(model, X_test, y_test, threshold):
+    """Confusion matrix at a given probability threshold."""
+    predicted = (model.predict_proba(X_test)[:, 1] >= threshold).astype(int)
+    matrix = confusion_matrix(y_test, predicted, labels=[0, 1])
+    return pd.DataFrame(matrix, index=["Real: sem evento", "Real: evento"],
+                        columns=["Previsto: sem evento", "Previsto: evento"])
+
+
+def undo_class_weight(probabilities, train_prevalence):
+    """Probabilities as if the model had been fitted without class weights.
+
+    class_weight="balanced" multiplies the odds of the event by
+    (1 - prevalence) / prevalence; this divides them back. Exact for the
+    logistic regression, approximate for the trees."""
+    ratio = train_prevalence / (1 - train_prevalence)
+    return probabilities * ratio / (probabilities * ratio + 1 - probabilities)
+
+
+def decision_curve(models, X_test, y_test, train_prevalence, thresholds=np.linspace(0.05, 0.60, 56)):
+    """Net benefit (Vickers & Elkin, 2006) of each model and of flagging
+    everyone, for each threshold probability p_t:
+
+        net benefit = TP/n - FP/n * p_t / (1 - p_t)
+
+    p_t expresses how much worse a missed event is than an unnecessary
+    follow-up: p_t = 0.25 means a missed event counts as 3 unnecessary
+    follow-ups. Flagging nobody has net benefit 0."""
+    y_true = np.asarray(y_test)
+    n, prevalence = len(y_true), y_true.mean()
+    curves = {"Sinalizar todos": prevalence - (1 - prevalence) * thresholds / (1 - thresholds)}
+    for name, model in models.items():
+        p = undo_class_weight(model.predict_proba(X_test)[:, 1], train_prevalence)
+        benefit = []
+        for t in thresholds:
+            flagged = p >= t
+            tp = (flagged & (y_true == 1)).sum(); fp = (flagged & (y_true == 0)).sum()
+            benefit.append(tp / n - fp / n * t / (1 - t))
+        curves[name] = np.array(benefit)
+    return pd.DataFrame(curves, index=pd.Index(thresholds.round(3), name="limiar_de_probabilidade"))
+
+
+def plot_decision_curve(curves):
+    """Net benefit against the threshold probability; the grey line at zero
+    is 'flag nobody'."""
+    import matplotlib.pyplot as plt
+    from src.utils import MUTED_COLOR, NEUTRAL_COLOR
+
+    colors = {"Sinalizar todos": MUTED_COLOR, "Árvore de decisão": NEUTRAL_COLOR,
+              "Regressão logística Lasso": "#2a78d6", "Random Forest": "#d6672a"}
+    fig, ax = plt.subplots(figsize=(3.5, 2.8))
+    ax.axhline(0, color="black", linewidth=0.6, linestyle="--", label="Não sinalizar ninguém")
+    for name in curves.columns:
+        style = ":" if name == "Sinalizar todos" else "-"
+        ax.plot(curves.index, curves[name], style, color=colors.get(name), linewidth=1.2, label=name)
+    ax.set_ylim(-0.02, curves.max().max() + 0.02)
+    ax.set_xlabel("Limiar de probabilidade")
+    ax.set_ylabel("Benefício líquido")
+    ax.legend(fontsize=5.5, frameon=False, loc="upper right")
+    return fig
+
+
+def plot_confusion_matrices(model, X_test, y_test, thresholds):
+    """Confusion matrices side by side, one per decision threshold
+    (`thresholds` maps a panel label to a cut-off)."""
+    import matplotlib.pyplot as plt
+    from sklearn.metrics import ConfusionMatrixDisplay
+
+    scores = model.predict_proba(X_test)[:, 1]
+    matrices = {label: confusion_matrix(y_test, (scores >= t).astype(int), labels=[0, 1])
+                for label, t in thresholds.items()}
+    vmax = max(m.max() for m in matrices.values())  # same color scale in every panel
+    fig, axes = plt.subplots(1, len(thresholds), figsize=(3.5, 1.9), sharey=True)
+    for ax, (label, matrix) in zip(np.atleast_1d(axes), matrices.items()):
+        ConfusionMatrixDisplay(matrix, display_labels=["Sem evento", "Evento"]).plot(
+            ax=ax, cmap="Blues", values_format="d", colorbar=False, text_kw={"fontsize": 7},
+            im_kw={"vmin": 0, "vmax": vmax})
+        ax.set_title(label, fontsize=7)
+        ax.set_xlabel("Classe prevista", fontsize=7)
+        ax.set_ylabel("")
+        ax.tick_params(labelsize=6)
+        ax.grid(False)
+    np.atleast_1d(axes)[0].set_ylabel("Classe verdadeira", fontsize=7)
+    fig.tight_layout()
     return fig

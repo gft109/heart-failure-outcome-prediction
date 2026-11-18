@@ -1,0 +1,16 @@
+atributo,queda_de_auc,desvio_padrao
+mitral.valve.EMS,0.0057,0.0047
+type.of.heart.failure_Left,0.004,0.003
+cystatin,0.0033,0.0025
+high.sensitivity.troponin,0.0028,0.0034
+left.ventricular.end.diastolic.diameter.LV,0.0026,0.0029
+red.blood.cell,0.0026,0.0012
+international.normalized.ratio,0.0022,0.001
+mitral.valve.AMS_not_ordered,0.0019,0.0024
+activated.partial.thromboplastin.time,0.0018,0.0019
+standard.deviation.of.red.blood.cell.distribution.width,0.0016,0.001
+glomerular.filtration.rate,0.0016,0.0022
+triglyceride,0.0015,0.0006
+BMI,0.0014,0.0012
+hemoglobin,0.0014,0.0004
+total.bile.acid,0.0013,0.0007

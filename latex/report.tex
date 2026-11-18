@@ -4,25 +4,25 @@
 % Pacotes essenciais para o idioma português e matemática
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-% \usepackage[brazil]{babel}
 \usepackage[brazilian]{babel}
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
-\usepackage{algorithmic}
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
 
 \begin{document}
 
-\title{Predição de Óbito ou Readmissão em Pacientes com Insuficiência Cardíaca: Uma Abordagem de Aprendizado de Máquina}
+\title{Predição de Óbito ou Readmissão em Pacientes com Insuficiência Cardíaca: Árvore de Decisão, Regressão Logística Lasso e \textit{Random Forest}}
 
-\author{\IEEEauthorblockN{[Nome do Colega]}
+\author{\IEEEauthorblockN{Gustavo Ferreira}
 \IEEEauthorblockA{\textit{Dep. de Engenharia Elétrica} \\
 \textit{Universidade Federal de Minas Gerais (UFMG)}\\
 Belo Horizonte, Brasil \\
-email.do.colega@dominio.com}
+email.do.autor@dominio.com}
 \and
 \IEEEauthorblockN{Luis Henrique Cordeiro Rodrigues}
 \IEEEauthorblockA{\textit{Dep. de Engenharia Elétrica} \\
@@ -34,61 +34,234 @@ luishenrique.29@hotmail.com}
 \maketitle
 
 \begin{abstract}
-A insuficiência cardíaca (IC) é uma das principais causas de hospitalização e apresenta altas taxas de morbidade e mortalidade pós-alta. Este estudo tem como objetivo desenvolver um modelo de aprendizado de máquina capaz de prever o desfecho combinado de óbito ou readmissão hospitalar em até 6 meses após a internação de pacientes com IC. Utilizando uma base de dados clínicos reais com 2.008 pacientes e atributos demográficos, sinais vitais, comorbidades e exames laboratoriais, o trabalho detalha as etapas de análise exploratória, engenharia de atributos e tratamento de dados ausentes com padrão não-aleatório (NMAR).
+A insuficiência cardíaca (IC) tem altas taxas de readmissão e de óbito após a alta, e identificar os pacientes de maior risco ainda durante a internação permitiria direcionar um acompanhamento mais próximo. Este trabalho prevê o desfecho composto de óbito ou readmissão em até 6 meses a partir de 2.008 internações de um hospital chinês, disponíveis no PhysioNet. Os dados passaram por remoção de variáveis com vazamento de informação e por um tratamento de faltantes que distingue ausência estrutural, exame não pedido e perda esporádica, resultando em 194 atributos. Foram comparados três modelos: uma árvore de decisão podada, como referência simples; uma regressão logística com penalidade Lasso, que seleciona os atributos durante o treinamento; e um \textit{Random Forest}. Na validação cruzada de 10 \textit{folds}, o Lasso (AUC 0,673) e o \textit{Random Forest} (0,676) empataram, ambos acima da árvore (0,588). No conjunto de teste ($n = 402$), o Lasso, escolhido por ser o mais simples entre os equivalentes, obteve AUC de 0,633 (IC 95\%: 0,578--0,689). Os três modelos superam referências de acaso em AUC e em acurácia balanceada, mas não em acurácia, que é dominada pela classe majoritária. Com um limiar voltado a não perder eventos, o modelo identifica 84\% dos pacientes com desfecho; a análise de curva de decisão mostra, porém, que o ganho sobre acompanhar todos os pacientes existe apenas numa faixa intermediária de custos.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Insuficiência Cardíaca, Aprendizado de Máquina, Prontuários Eletrônicos, Prognóstico Clínico, Bioengenharia, Classificação Binária.
+Insuficiência cardíaca, aprendizado de máquina, prontuário eletrônico, seleção de atributos, Lasso, \textit{Random Forest}, curva de decisão.
 \end{IEEEkeywords}
 
 \section{Introdução}
-A insuficiência cardíaca (IC) afeta milhões de pessoas globalmente e representa um desafio significativo para os sistemas de saúde devido à sua elevada taxa de readmissão hospitalar e mortalidade associada a curto e médio prazo \cite{b3}. Identificar preditores precoces de agravamento clínico durante a internação é fundamental para a transição segura dos cuidados e a otimização de recursos hospitalares.
 
-Com o advento dos Registros Eletrônicos de Saúde (EHR, do inglês \textit{Electronic Healthcare Records}), enormes volumes de dados passaram a ser rotineiramente coletados, desde sinais vitais na admissão até painéis laboratoriais complexos e ecocardiogramas \cite{b2}. A aplicação de técnicas de aprendizagem estatística e inteligência computacional sobre esses registros permite extrair padrões multivariados não lineares, auxiliando a prática médica com modelos de suporte à decisão clínica \cite{b4}.
+A insuficiência cardíaca afeta milhões de pessoas e é uma das principais causas de hospitalização, com taxas elevadas de readmissão e de mortalidade nos meses seguintes à alta \cite{b4}. Prever quais pacientes internados terão esses eventos permitiria concentrar neles um acompanhamento ambulatorial mais frequente.
 
-O presente trabalho propõe o desenvolvimento e a avaliação comparativa de algoritmos de classificação supervisionada para prever o risco de um paciente com IC evoluir para óbito ou necessitar de readmissão hospitalar em uma janela de até 6 meses. O estudo documenta o fluxo de processamento de dados, com ênfase na análise exploratória criteriosa, na prevenção de vazamento de informações (\textit{data leakage}) e na modelagem metodológica de dados faltantes estruturais inerentes à rotina clínica.
+Modelos de predição de readmissão em IC costumam ter desempenho discriminativo modesto: estudos com prontuários eletrônicos relatam AUC em torno de 0,6 a 0,7, e técnicas de aprendizado de máquina mais flexíveis raramente superam a regressão logística por margem relevante \cite{b6,b7,b8}. Os registros hospitalares não contêm o que acontece depois da alta, como adesão ao tratamento e acompanhamento ambulatorial, o que limita o que qualquer modelo pode aprender.
+
+Este trabalho percorre as quatro etapas propostas pela disciplina: análise exploratória, extração e seleção de atributos, treinamento de modelos lineares e não lineares, e avaliação e seleção de modelos. As contribuições são: um tratamento de dados faltantes que preserva a informação de exames não solicitados; a comparação de uma árvore de decisão, uma regressão logística Lasso e um \textit{Random Forest} sob o mesmo protocolo; e uma avaliação que compara os modelos explicitamente com o acaso e discute o seu uso clínico.
 
 \section{Metodologia}
 
-\subsection{Base de Dados e Formulação do Alvo}
-Os dados utilizados neste estudo são provenientes do repositório \textit{PhysioNet} (versão 1.3) \cite{b1}, consistindo em uma coorte observacional retrospectiva de 2.008 pacientes consecutivamente hospitalizados com diagnóstico de insuficiência cardíaca no \textit{Zigong Fourth People's Hospital} (Sichuan, China) entre dezembro de 2016 e junho de 2019 \cite{b2}. O critério de inclusão baseou-se nas diretrizes da Sociedade Europeia de Cardiologia (ESC), englobando sinais clínicos típicos e elevação de peptídeos natriuréticos (BNP/NT-proBNP) \cite{b3}.
+\subsection{Base de dados e variável alvo}
 
-O conjunto de dados original compreende 166 variáveis clínicas distribuídas entre informações demográficas, sinais vitais na admissão, parâmetros ecocardiográficos, escalas de gravidade funcional (classificação NYHA, grau de Killip e Índice de Comorbidade de Charlson), exames laboratoriais realizados no primeiro dia de internação e o registro diário de prescrição farmacológica \cite{b1, b2}.
+Os dados vêm do PhysioNet \cite{b1,b3}: 2.008 internações consecutivas por IC no \textit{Zigong Fourth People's Hospital} (Sichuan, China), entre dezembro de 2016 e junho de 2019, com diagnóstico pelos critérios da Sociedade Europeia de Cardiologia \cite{b2,b4}. A base tem 166 variáveis (demografia, sinais vitais, classificação da IC, comorbidades, ecocardiograma, cerca de 100 exames laboratoriais e desfechos de seguimento) e uma tabela com 25 fármacos administrados durante a internação.
 
-A variável resposta (\textit{target}) foi estruturada como um problema de classificação binária combinando o \textbf{óbito ou a readmissão hospitalar em até 6 meses} \cite{b4}. A adoção desse desfecho composto mitiga o viés de risco competitivo da readmissão isolada, no qual pacientes que evoluem para óbito precocemente após a alta seriam erroneamente rotulados como casos sem evento. Na coorte analisada, a prevalência do desfecho positivo foi de 41,5\% (833 pacientes, sendo 776 readmissões e 57 óbitos), configurando um equilíbrio de classes adequado para o treinamento supervisionado. Para prevenir o vazamento de dados (\textit{data leakage}), todas as 14 variáveis referentes a informações de alta e acompanhamento pós-internação foram rigorosamente descartadas da matriz de preditores antes de qualquer transformação estatística.
+A variável alvo é binária: $y = 1$ se o paciente foi readmitido em até 6 meses ou morreu em até 6 meses. São 833 eventos (41,5\%): 776 readmissões e 57 óbitos. O desfecho composto evita contar como ``sem evento'' quem morre após a alta e, por isso, não pode ser readmitido.
 
-\subsection{Análise Exploratória e Características Basais}
-A análise exploratória de dados (EDA) foi conduzida para investigar a distribuição das covariáveis, a completude dos registros e a presença de observações atípicas (\textit{outliers}). O mapeamento da taxa de ausência revelou que a falta de preenchimento nos exames laboratoriais não ocorre de forma puramente aleatória, mas em blocos consistentes com a não solicitação de painéis diagnósticos inteiros (padrão \textit{Not Missing At Random} --- NMAR), destacando-se a gasometria arterial (50,5\% de ausência média) e o perfil lipídico (50,7\%). Na prática clínica, a omissão desses painéis reflete a avaliação médica de estabilidade hemodinâmica ou metabólica do paciente na admissão, carregando sinal prognóstico relevante.
+\subsection{Análise exploratória}
 
-A Tabela~\ref{tab:caracteristicas_basais} apresenta as características basais estratificadas entre o grupo estável e o grupo que atingiu o desfecho negativo. Observa-se maior concentração de pacientes nas classes funcionais mais graves da escala NYHA (classe IV: 36,7\% contra 26,4\%) e no grau IV de Killip (5,2\% contra 1,4\%) entre os indivíduos que evoluíram para óbito ou readmissão, além de menor média de pressão arterial sistólica na admissão. Adicionalmente, a inspeção de marcadores laboratoriais como o peptídeo natriurético cerebral (BNP) evidenciou forte assimetria à direita e valores extremos, fundamentando a adoção de estimadores robustos (baseados na mediana) e normalização de escala nas etapas subsequentes de engenharia de atributos.
+Nenhuma internação está completa, e 44 colunas têm mais de 50\% de valores ausentes. A ausência ocorre em blocos que correspondem a painéis inteiros de exames: a gasometria falta em cerca de metade das internações, e as medidas do ecocardiograma em 66\% delas, em média. Esse padrão indica que o exame não foi pedido, o que reflete uma decisão médica e pode carregar informação prognóstica \cite{b9}. A Tabela~\ref{tab:basais} compara os dois grupos do desfecho: os pacientes com evento concentram-se nas classes mais graves da NYHA e no grau IV de Killip, e têm mais comorbidades.
 
 \begin{table}[htbp]
-\caption{Características Basais Estratificadas pelo Desfecho}
-\begin{center}
-\begin{tabular}{|l|c|c|}
-\hline
-\textbf{Característica} & \textbf{Estável (0)} & \textbf{Óbito/Readmissão (1)} \\
-\hline
-\hline
-\multicolumn{3}{|c|}{\textit{Variáveis Contínuas/Discretas (Média $\pm$ DP)}} \\
-\hline
-IMC ($\text{kg/m}^2$) & $21.88 \pm 13.54$ & $21.66 \pm 13.81$ \\
-Pressão Sistólica (mmHg) & $132.93 \pm 24.42$ & $128.42 \pm 24.97$ \\
-Fração de Ejeção --- LVEF (\%) & $50.79 \pm 13.49$ & $50.54 \pm 12.86$ \\
-Índice de Charlson (CCI) & $1.79 \pm 0.89$ & $1.96 \pm 1.05$ \\
-\hline
-\multicolumn{3}{|c|}{\textit{Variáveis Categóricas (\%)}} \\
-\hline
-Sexo Masculino & 40.8\% & 43.9\% \\
-Classe NYHA III & 53.1\% & 49.8\% \\
-Classe NYHA IV & 26.4\% & 36.7\% \\
-Killip Grau III & 19.8\% & 19.1\% \\
-Killip Grau IV & 1.4\% & 5.2\% \\
-\hline
+\caption{Características basais por desfecho}
+\label{tab:basais}
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Característica} & \textbf{Sem evento} & \textbf{Com evento} \\
+\midrule
+\multicolumn{3}{l}{\textit{Média $\pm$ desvio padrão}} \\
+Pressão sistólica (mmHg) & 132,9 $\pm$ 24,4 & 128,4 $\pm$ 25,0 \\
+Fração de ejeção (\%) & 50,8 $\pm$ 13,5 & 50,5 $\pm$ 12,9 \\
+Índice de Charlson & 1,79 $\pm$ 0,89 & 1,96 $\pm$ 1,05 \\
+\midrule
+\multicolumn{3}{l}{\textit{Percentual do grupo}} \\
+Sexo masculino & 40,8\% & 43,9\% \\
+NYHA II & 20,5\% & 13,4\% \\
+NYHA IV & 26,4\% & 36,7\% \\
+Killip IV & 1,4\% & 5,2\% \\
+\bottomrule
 \end{tabular}
-\label{tab:caracteristicas_basais}
-\end{center}
 \end{table}
+
+\subsection{Tratamento dos dados}
+
+Todas as transformações desta etapa são determinísticas e não usam o alvo, de modo que podem ser aplicadas antes da divisão em treino e teste. O que é aprendido dos dados (imputação e padronização) é ajustado depois, apenas no treino.
+
+\textit{Vazamento de informação.} Foram removidas as 14 colunas conhecidas só depois da alta ou que constituem o próprio desfecho (desfechos de seguimento, tempos até o evento, destino, setor e dia da alta), além do identificador do paciente. Os desfechos removidos são usados apenas para construir o alvo.
+
+\textit{Dados faltantes.} Os valores ausentes foram tratados conforme o seu significado, seguindo a recomendação de que, em modelos de predição, a ausência informativa deve ser preservada \cite{b10,b11}:
+\begin{itemize}
+\item \textit{Estrutural}: em suporte ventilatório, o vazio significa ``sem ventilação mecânica''; a variável virou um indicador 0/1 (42 casos com ventilação).
+\item \textit{Exame não pedido}: variáveis com mais de 20\% de ausência receberam um indicador 0/1 de exame não realizado. Variáveis cujos padrões de ausência coincidem em pelo menos 98\% das internações formam um painel e compartilham um indicador, o que reduziu 43 variáveis a 15 indicadores (a gasometria, com 23 variáveis, a um só). O valor medido foi mantido.
+\item \textit{Esporádico}: os demais vazios foram imputados pela mediana do treino, dentro do \textit{pipeline} de cada modelo.
+\end{itemize}
+
+\textit{Variáveis qualitativas.} As de dois níveis viraram uma coluna 0/1; as demais (setor de admissão, ocupação, tipo de IC, NYHA, Killip e faixa etária) foram codificadas por \textit{one-hot}, com o nível mais frequente como referência. Níveis raros foram agrupados: UTI com ``outros'' no setor de admissão, duas ocupações com menos de 20 casos, e as faixas etárias abaixo de 50 anos.
+
+\textit{Colunas removidas.} Uma coluna inteiramente vazia, duas constantes e quatro redundantes com a escala de Glasgow (seus três componentes, dos quais ela é a soma, e o nível de consciência). Os 25 fármacos entraram como indicadores de uso. A matriz final tem 194 atributos: 117 numéricos, 37 binários clínicos ou codificados, 15 indicadores de exame não pedido e 25 fármacos.
+
+\subsection{Modelos e seleção de atributos}
+
+Foram treinados três modelos \cite{b5}:
+\begin{enumerate}
+\item \textit{Árvore de decisão} \cite{b13}: referência simples e interpretável, com poda por complexidade de custo (parâmetro $\alpha$).
+\item \textit{Regressão logística com penalidade Lasso} \cite{b12}: modelo linear com penalidade $\ell_1$, que zera os coeficientes dos atributos que não contribuem. É um método \textit{embutido} de seleção de atributos: a seleção ocorre durante o próprio treinamento, com a força da penalidade escolhida pela validação cruzada. Os atributos são padronizados antes do ajuste, pois a penalidade depende da escala dos coeficientes.
+\item \textit{Random Forest} \cite{b14}: comitê de 500 árvores, cada uma treinada numa amostra \textit{bootstrap} (\textit{bagging}) e com um subconjunto aleatório de atributos sorteado em cada divisão. Usa todos os atributos.
+\end{enumerate}
+
+Os três usam pesos inversamente proporcionais à frequência das classes. O conjunto foi dividido em treino (80\%, $n = 1.606$) e teste (20\%, $n = 402$), de forma estratificada. Os hiperparâmetros foram escolhidos por busca em grade com validação cruzada estratificada de 10 \textit{folds} no treino, maximizando a AUC: $\alpha$ da poda; o inverso da penalidade do Lasso, $C$; e, no \textit{Random Forest}, a fração de atributos por divisão e o tamanho mínimo das folhas. A imputação e a padronização ficam dentro do \textit{pipeline} e são reajustadas em cada \textit{fold}. A implementação usa o \textit{scikit-learn} \cite{b15}.
+
+\subsection{Avaliação}
+
+O modelo final foi escolhido pela validação cruzada, sem consultar o teste: o de maior AUC ou, entre os modelos a até um erro padrão dele, o mais simples \cite{b5}. O teste foi usado uma única vez, para estimar o desempenho em pacientes novos.
+
+Como 58,5\% das internações não têm evento, um modelo que responde sempre ``sem evento'' acerta 58,5\% sem aprender nada. Por isso os modelos foram comparados com duas referências de acaso (sempre a classe majoritária e sorteio na proporção das classes), e a avaliação se apoia em duas métricas que valem 0,5 para o acaso qualquer que seja a proporção das classes: a AUC \cite{b16} e a acurácia balanceada (média de sensibilidade e especificidade). Os intervalos de confiança de 95\% foram obtidos por \textit{bootstrap} com 2.000 reamostras do teste \cite{b17}; considera-se que um modelo supera o acaso quando os intervalos de AUC e de acurácia balanceada ficam inteiros acima de 0,5.
+
+\textit{Uso clínico.} O modelo serviria para sinalizar pacientes para acompanhamento mais próximo, e um evento não detectado custa mais que um acompanhamento desnecessário. Em aplicações médicas, é usual reduzir o limiar de decisão para diminuir os falsos negativos, mesmo à custa de mais falsos positivos \cite{b5}. Além do limiar padrão de 0,5, avaliou-se um limiar clínico, escolhido no treino (com probabilidades previstas fora do \textit{fold}) para identificar 90\% dos eventos. A utilidade clínica foi analisada pela curva de decisão \cite{b18}, que calcula o benefício líquido de cada estratégia para cada limiar de probabilidade $p_t$:
+\begin{equation}
+\text{BL}(p_t) = \frac{\text{VP}}{n} - \frac{\text{FP}}{n}\,\frac{p_t}{1 - p_t},
+\end{equation}
+em que $p_t$ exprime quanto pior é perder um evento: $p_t = 0{,}25$ equivale a considerar um evento perdido tão grave quanto três acompanhamentos desnecessários. Como a curva supõe probabilidades bem calibradas, desfez-se o efeito dos pesos por classe dividindo as chances previstas pela razão dos pesos \cite{b19}.
+
+\section{Resultados e Discussão}
+
+\subsection{Validação cruzada}
+
+A Tabela~\ref{tab:cv} resume a validação cruzada. O Lasso e o \textit{Random Forest} empatam (diferença de 0,003, menor que o erro padrão), e ambos superam a árvore. O Lasso manteve 68 dos 194 atributos. A AUC de 1,0 do \textit{Random Forest} no treino reflete árvores que quase memorizam os dados; é a votação do comitê, e não cada árvore, que generaliza. A árvore sem poda também memorizava o treino (AUC de validação de 0,52); a poda a reduziu a 7 folhas. Pelo critério de escolha, o modelo final é o Lasso, o mais simples dos dois equivalentes.
+
+\begin{table}[htbp]
+\caption{AUC na validação cruzada de 10 \textit{folds} (treino)}
+\label{tab:cv}
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Modelo} & \textbf{Validação} & \textbf{Treino} & \textbf{Tamanho} \\
+\midrule
+Árvore de decisão & 0,588 $\pm$ 0,008 & 0,656 & 7 folhas \\
+Lasso & 0,673 $\pm$ 0,012 & 0,747 & 68 atributos \\
+\textit{Random Forest} & 0,676 $\pm$ 0,011 & 1,000 & 500 árvores \\
+\bottomrule
+\multicolumn{4}{l}{\footnotesize Validação: média $\pm$ erro padrão nos 10 \textit{folds}.}
+\end{tabular}
+\end{table}
+
+\subsection{Desempenho no teste e comparação com o acaso}
+
+A Tabela~\ref{tab:teste} mostra o desempenho no teste. Os três modelos superam o acaso: seus intervalos de confiança de AUC e de acurácia balanceada ficam inteiros acima de 0,5, enquanto os das duas referências incluem 0,5. A acurácia, por outro lado, não mostra esse ganho. O Lasso e o \textit{Random Forest} acertam 60\%, pouco acima dos 58,5\% de responder sempre ``sem evento'', com intervalos de confiança que incluem esse valor; a árvore acerta menos que isso, embora identifique 84\% dos eventos. A Fig.~\ref{fig:roc} mostra as curvas ROC: Lasso e \textit{Random Forest} praticamente se sobrepõem, e a árvore fica mais próxima da diagonal.
+
+A queda de cerca de 0,04 entre a validação cruzada e o teste está dentro da variação esperada para um teste de 402 internações, cujo intervalo de confiança tem amplitude de aproximadamente 0,11. O patamar de AUC é compatível com o relatado para predição de readmissão em IC \cite{b6,b7}, e o empate entre o modelo linear e o \textit{Random Forest} concorda com a revisão de \cite{b8}.
+
+\begin{table}[htbp]
+\caption{Desempenho no teste ($n = 402$), limiar 0,5}
+\label{tab:teste}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Modelo} & \textbf{AUC (IC 95\%)} & \textbf{Ac. bal.} & \textbf{Acurácia} & \textbf{Sens.} & \textbf{Espec.} \\
+\midrule
+Acaso: majoritária & 0,500 & 0,500 & 0,585 & 0,000 & 1,000 \\
+Acaso: sorteio & 0,487 (0,44--0,54) & 0,487 & 0,500 & 0,413 & 0,562 \\
+Árvore & 0,572 (0,52--0,63) & 0,568 & 0,522 & 0,838 & 0,298 \\
+Lasso & 0,633 (0,58--0,69) & 0,590 & 0,600 & 0,533 & 0,647 \\
+\textit{Random Forest} & 0,626 (0,57--0,68) & 0,574 & 0,602 & 0,407 & 0,740 \\
+\bottomrule
+\multicolumn{6}{l}{\scriptsize IC 95\% da acurácia balanceada: árvore 0,53--0,61; Lasso 0,54--0,64; RF 0,53--0,62.}
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.85\columnwidth]{img/roc_curves_test.pdf}}
+\caption{Curvas ROC no conjunto de teste. A diagonal pontilhada corresponde ao acaso.}
+\label{fig:roc}
+\end{figure}
+
+\subsection{Uso clínico: escolha do limiar e curva de decisão}
+
+A Tabela~\ref{tab:limiar} compara, no Lasso, o limiar padrão com o limiar clínico (0,353). Com o limiar clínico, a sensibilidade sobe de 53\% para 84\%, e os eventos não detectados caem de 78 para 26, ao custo de sinalizar 297 dos 402 pacientes. Entre os 105 que o modelo deixaria fora do acompanhamento intensivo, 75\% de fato não tiveram evento, contra 58,5\% numa escolha ao acaso. A sensibilidade no teste ficou abaixo dos 90\% planejados no treino, o que mostra que o limiar não se transfere perfeitamente a pacientes novos.
+
+\begin{table}[htbp]
+\caption{Efeito do limiar de decisão no teste (Lasso)}
+\label{tab:limiar}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Estratégia} & \textbf{Sens.} & \textbf{Espec.} & \textbf{Sinalizados} & \textbf{Perdidos} & \textbf{VPN} \\
+\midrule
+Limiar padrão (0,5) & 0,533 & 0,647 & 172 & 78 & 0,661 \\
+Limiar clínico (0,353) & 0,844 & 0,336 & 297 & 26 & 0,752 \\
+Sinalizar todos & 1,000 & 0,000 & 402 & 0 & -- \\
+\bottomrule
+\multicolumn{6}{l}{\scriptsize Perdidos: eventos não sinalizados (de 167). VPN: fração sem evento entre os não sinalizados.}
+\end{tabular}
+\end{table}
+
+A Fig.~\ref{fig:confusao} mostra as matrizes de confusão do Lasso no teste, no formato de \cite{b5}: linhas com a classe verdadeira e colunas com a classe prevista. O limiar clínico reduz os falsos negativos (eventos previstos como ``sem evento'') de 78 para 26, ao custo de elevar os falsos positivos de 83 para 156.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=\columnwidth]{img/confusion_matrices_lasso.pdf}}
+\caption{Matrizes de confusão do Lasso no teste, com o limiar padrão (0,5) e o limiar clínico (0,353).}
+\label{fig:confusao}
+\end{figure}
+
+A curva de decisão (Fig.~\ref{fig:dca}) qualifica esse resultado. Para limiares abaixo de cerca de 0,2, ou seja, quando perder um evento é considerado pelo menos quatro vezes pior que um acompanhamento desnecessário, os modelos não superam a estratégia de sinalizar todos os pacientes. O benefício aparece numa faixa intermediária, aproximadamente entre 0,25 e 0,45: em $p_t = 0{,}35$, o benefício líquido do Lasso é 0,129, contra 0,101 de sinalizar todos. Assim, o modelo é útil quando o acompanhamento tem um custo relevante; se ele for barato, acompanhar todos os pacientes é tão bom quanto usar o modelo.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.85\columnwidth]{img/decision_curve.pdf}}
+\caption{Curva de decisão no teste: benefício líquido de cada modelo e das estratégias de sinalizar todos e não sinalizar ninguém.}
+\label{fig:dca}
+\end{figure}
+
+\subsection{Interpretação dos modelos}
+
+A Tabela~\ref{tab:lasso} lista os dez maiores coeficientes do Lasso. Os indicadores de exame não realizado (ecocardiograma e gasometria) estão entre os atributos de maior efeito, o que confirma que a ausência de exames carrega informação prognóstica nesta base. Aumentam o risco também o diâmetro diastólico do ventrículo esquerdo, o índice de Charlson, o grau IV de Killip e a doença renal crônica; IC apenas esquerda (em relação a IC esquerda e direita) e ocupação agrícola associam-se a menor risco.
+
+\begin{table}[htbp]
+\caption{Dez maiores coeficientes do Lasso}
+\label{tab:lasso}
+\centering
+\footnotesize
+\begin{tabular}{lc}
+\toprule
+\textbf{Atributo} & \textbf{RC por DP} \\
+\midrule
+IC apenas esquerda (ref.: ambas) & 0,815 \\
+Diâmetro diastólico do VE não medido & 1,167 \\
+Ocupação: agricultor & 0,858 \\
+Onda A mitral (ecocardiograma) não medida & 1,148 \\
+Diâmetro diastólico final do VE & 1,140 \\
+Gasometria não realizada & 1,119 \\
+Índice de Charlson & 1,110 \\
+Killip IV & 1,109 \\
+Doença renal crônica moderada a grave & 1,108 \\
+Fração de ejeção não medida & 0,914 \\
+\bottomrule
+\multicolumn{2}{l}{\scriptsize RC por DP: razão de chances por desvio padrão do atributo.}
+\end{tabular}
+\end{table}
+
+A árvore podada (Fig.~\ref{fig:arvore}) começa pela realização do ecocardiograma (onda E mitral medida ou não) e segue pela taxa de filtração glomerular e pelo ácido úrico, ou seja, combina a mesma informação de exame não pedido com marcadores de função renal. No \textit{Random Forest}, a importância por permutação (queda da AUC no teste ao embaralhar cada atributo) destaca a onda E mitral, o tipo de IC, a cistatina C, a troponina e o diâmetro do ventrículo esquerdo, todos marcadores fisiopatológicos conhecidos da IC. As quedas individuais são pequenas (no máximo 0,006), porque o comitê compensa a perda de um atributo com os demais, correlacionados a ele.
+
+Vários atributos selecionados descrevem a conduta do hospital (exame não pedido, fármaco administrado), e não diretamente o estado do paciente. Eles ajudam a prever, mas não indicam causa e podem não valer em outro serviço.
+
+\begin{figure*}[htbp]
+\centerline{\includegraphics[width=0.85\textwidth]{img/decision_tree.pdf}}
+\caption{Árvore de decisão podada (7 folhas). Cada nó mostra a regra, a fração das internações do treino e a proporção de cada classe, ponderada pelos pesos por classe.}
+\label{fig:arvore}
+\end{figure*}
+
+\section{Conclusão}
+
+Este trabalho comparou uma árvore de decisão, uma regressão logística Lasso e um \textit{Random Forest} na predição de óbito ou readmissão em 6 meses em pacientes com IC. O tratamento dos faltantes conforme o seu significado mostrou-se relevante: indicadores de exame não pedido estão entre os atributos de maior peso nos três modelos. O Lasso, que seleciona os atributos durante o treinamento, empatou com o \textit{Random Forest} e foi escolhido por ser mais simples e interpretável; ambos superaram a árvore, o que ilustra o ganho do \textit{bagging}.
+
+Os três modelos superam o acaso em AUC e em acurácia balanceada, mas o ganho é modesto (AUC de 0,63 no teste) e não aparece na acurácia, o que reforça que, com classes desbalanceadas, a acurácia isolada não é uma métrica adequada. O limiar de decisão muda o uso do modelo, não a sua qualidade: um limiar clínico eleva a sensibilidade a 84\%, mas a curva de decisão mostra que o modelo só acrescenta valor quando o acompanhamento extra tem um custo relevante.
+
+Entre as limitações estão o uso de um único hospital, sem validação externa; a ausência de informações posteriores à alta; o fato de a análise exploratória ter usado a base inteira, antes da separação do teste; e a avaliação da calibração apenas indireta, pela correção aplicada à curva de decisão. Como trabalhos futuros, sugerem-se a calibração explícita das probabilidades e a validação em outras populações.
 
 \begin{thebibliography}{00}
 
@@ -96,9 +269,39 @@ Killip Grau IV & 1.4\% & 5.2\% \\
 
 \bibitem{b2} Z. Zhang, L. Cao, R. Chen, Y. Zhao, L. Lv, Z. Xu, and P. Xu, ``Electronic healthcare records and external outcome data for hospitalized patients with heart failure,'' \textit{Scientific Data}, vol. 8, no. 1, p. 46, Feb. 2021.
 
-\bibitem{b3} P. Ponikowski \textit{et al.}, ``2016 ESC Guidelines for the diagnosis and treatment of acute and chronic heart failure,'' \textit{European Heart Journal}, vol. 37, no. 27, pp. 2129--2200, Jul. 2016.
+\bibitem{b3} A. L. Goldberger \textit{et al.}, ``PhysioBank, PhysioToolkit, and PhysioNet: components of a new research resource for complex physiologic signals,'' \textit{Circulation}, vol. 101, no. 23, pp. e215--e220, 2000.
 
-\bibitem{b4} G. James, D. Witten, T. Hastie, R. Tibshirani, and J. Taylor, \textit{An Introduction to Statistical Learning with Applications in Python}. Cham, Switzerland: Springer, 2023.
+\bibitem{b4} P. Ponikowski \textit{et al.}, ``2016 ESC Guidelines for the diagnosis and treatment of acute and chronic heart failure,'' \textit{European Heart Journal}, vol. 37, no. 27, pp. 2129--2200, Jul. 2016.
+
+\bibitem{b5} G. James, D. Witten, T. Hastie, R. Tibshirani, and J. Taylor, \textit{An Introduction to Statistical Learning with Applications in Python}. Cham, Switzerland: Springer, 2023.
+
+\bibitem{b6} J. D. Frizzell \textit{et al.}, ``Prediction of 30-day all-cause readmissions in patients hospitalized for heart failure: comparison of machine learning and other statistical approaches,'' \textit{JAMA Cardiology}, vol. 2, no. 2, pp. 204--209, 2017.
+
+\bibitem{b7} B. J. Mortazavi \textit{et al.}, ``Analysis of machine learning techniques for heart failure readmissions,'' \textit{Circulation: Cardiovascular Quality and Outcomes}, vol. 9, no. 6, pp. 629--640, 2016.
+
+\bibitem{b8} E. Christodoulou, J. Ma, G. S. Collins, E. W. Steyerberg, J. Y. Verbakel, and B. Van Calster, ``A systematic review shows no performance benefit of machine learning over logistic regression for clinical prediction models,'' \textit{Journal of Clinical Epidemiology}, vol. 110, pp. 12--22, 2019.
+
+\bibitem{b9} D. Agniel, I. S. Kohane, and G. M. Weber, ``Biases in electronic health record data due to processes within the healthcare system: retrospective observational study,'' \textit{BMJ}, vol. 361, p. k1479, 2018.
+
+\bibitem{b10} R. H. H. Groenwold, I. R. White, A. R. T. Donders, J. R. Carpenter, D. G. Altman, and K. G. M. Moons, ``Missing covariate data in clinical research: when and when not to use the missing-indicator method for analysis,'' \textit{CMAJ}, vol. 184, no. 11, pp. 1265--1269, 2012.
+
+\bibitem{b11} M. Sperrin, G. P. Martin, R. Sisk, and N. Peek, ``Missing data should be handled differently for prediction than for description or causal explanation,'' \textit{Journal of Clinical Epidemiology}, vol. 125, pp. 183--187, 2020.
+
+\bibitem{b12} R. Tibshirani, ``Regression shrinkage and selection via the lasso,'' \textit{Journal of the Royal Statistical Society: Series B}, vol. 58, no. 1, pp. 267--288, 1996.
+
+\bibitem{b13} L. Breiman, J. H. Friedman, R. A. Olshen, and C. J. Stone, \textit{Classification and Regression Trees}. Belmont, CA, USA: Wadsworth, 1984.
+
+\bibitem{b14} L. Breiman, ``Random forests,'' \textit{Machine Learning}, vol. 45, no. 1, pp. 5--32, 2001.
+
+\bibitem{b15} F. Pedregosa \textit{et al.}, ``Scikit-learn: machine learning in Python,'' \textit{Journal of Machine Learning Research}, vol. 12, pp. 2825--2830, 2011.
+
+\bibitem{b16} J. A. Hanley and B. J. McNeil, ``The meaning and use of the area under a receiver operating characteristic (ROC) curve,'' \textit{Radiology}, vol. 143, no. 1, pp. 29--36, 1982.
+
+\bibitem{b17} B. Efron and R. J. Tibshirani, \textit{An Introduction to the Bootstrap}. New York, NY, USA: Chapman \& Hall, 1993.
+
+\bibitem{b18} A. J. Vickers and E. B. Elkin, ``Decision curve analysis: a novel method for evaluating prediction models,'' \textit{Medical Decision Making}, vol. 26, no. 6, pp. 565--574, 2006.
+
+\bibitem{b19} G. King and L. Zeng, ``Logistic regression in rare events data,'' \textit{Political Analysis}, vol. 9, no. 2, pp. 137--163, 2001.
 
 \end{thebibliography}
 

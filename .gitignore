@@ -9,6 +9,7 @@ Instrucoes/
 
 # Contains real values per variable (min/max of each exam, patient ID range)
 results/variable_overview.csv
+results/variable_overview.pdf
 
 # Python environment
 .venv/
