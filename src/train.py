@@ -64,10 +64,30 @@ def tune_models(X_train, y_train):
             "auc_cv": search.cv_results_["mean_test_score"][best],
             "auc_cv_erro_padrao": search.cv_results_["std_test_score"][best] / np.sqrt(N_SPLITS),
             "auc_treino": search.cv_results_["mean_train_score"][best],
-            "melhores_hiperparametros": {k.replace("model__", ""): v for k, v in search.best_params_.items()},
+            "melhores_hiperparametros": {k.replace("model__", ""): round(v.item(), 4) if hasattr(v, "item") else v
+                                         for k, v in search.best_params_.items()},
         })
         searches[name] = search
     return pd.DataFrame(rows).set_index("modelo").round(3), searches
+
+
+def indicator_ablation(X_train, y_train, model_name="Regressão logística Lasso"):
+    """Does the "exam not ordered" treatment help? Same model, grid and folds,
+    with and without the not-ordered indicators (the measured values stay in
+    both, imputed by the median)."""
+    _, pipeline, grid = get_models()[model_name]
+    folds = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+    indicators = [c for c in X_train.columns if c.endswith("_not_ordered")]
+    rows = {}
+    for label, columns in [("com os indicadores", list(X_train.columns)),
+                           ("sem os indicadores", [c for c in X_train.columns if c not in indicators])]:
+        search = GridSearchCV(pipeline, grid, scoring="roc_auc", cv=folds, n_jobs=-1).fit(X_train[columns], y_train)
+        rows[label] = {
+            "n_atributos": len(columns),
+            "auc_cv": search.best_score_,
+            "auc_cv_erro_padrao": search.cv_results_["std_test_score"][search.best_index_] / np.sqrt(N_SPLITS),
+        }
+    return pd.DataFrame(rows).T.round(3)
 
 
 def model_sizes(searches, n_features):

@@ -1,4 +1,4 @@
-modelo,tipo,auc_cv,auc_cv_erro_padrao,auc_treino
-Árvore de decisão,não linear,0.588,0.008,0.656
-Regressão logística Lasso,linear,0.673,0.012,0.747
-Random Forest,não linear,0.676,0.011,1.0
+modelo,tipo,auc_cv,auc_cv_erro_padrao,auc_treino,melhores_hiperparametros
+Árvore de decisão,não linear,0.588,0.008,0.656,{'ccp_alpha': 0.005}
+Regressão logística Lasso,linear,0.673,0.012,0.747,{'C': 0.0562}
+Random Forest,não linear,0.676,0.011,1.0,"{'max_features': 0.05, 'min_samples_leaf': 5}"

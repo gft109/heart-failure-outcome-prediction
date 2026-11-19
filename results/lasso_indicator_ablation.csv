@@ -1,0 +1,3 @@
+matriz,n_atributos,auc_cv,auc_cv_erro_padrao
+com os indicadores,194.0,0.673,0.012
+sem os indicadores,179.0,0.647,0.012

@@ -130,19 +130,23 @@ def forest_importance(forest_pipeline, X_test, y_test, top=15):
 
 def plot_tree(tree_pipeline, feature_names):
     """Drawing of the pruned decision tree."""
+    import re
     import matplotlib.pyplot as plt
     from sklearn.tree import plot_tree as sk_plot_tree
 
     tree = tree_pipeline.named_steps["model"]
-    fig, ax = plt.subplots(figsize=(7.2, 3.6))
+    fig, ax = plt.subplots(figsize=(7.2, 4.6))
     boxes = sk_plot_tree(tree, feature_names=list(feature_names), class_names=["sem evento", "evento"],
-                         filled=True, impurity=False, proportion=True, rounded=True, fontsize=5, ax=ax)
-    # scikit-learn writes the box labels in English
+                         filled=True, impurity=False, proportion=True, rounded=True, precision=2,
+                         fontsize=6, ax=ax)
+    # scikit-learn writes the box labels in English and with decimal points
     labels = {"samples = ": "internações = ", "value = ": "proporção = ", "class = ": "classe = "}
     for box in boxes:
         text = box.get_text()
         for english, portuguese in labels.items():
             text = text.replace(english, portuguese)
+        text = re.sub(r"\[([\d.]+), ([\d.]+)\]", r"[\1; \2]", text)  # list separator, before the decimal comma
+        text = re.sub(r"(\d)\.(\d)", r"\1,\2", text)  # numbers only: feature names have no digit.digit
         box.set_text(text)
     for text in ax.texts:
         if text.get_text().strip() in ("True", "False"):
@@ -165,9 +169,12 @@ def clinical_threshold(model, X_train, y_train, target_sensitivity=0.90, n_split
     return float(np.quantile(scores[np.asarray(y_train) == 1], 1 - target_sensitivity))
 
 
-def threshold_comparison(model, X_test, y_test, thresholds):
+def threshold_comparison(model, X_test, y_test, thresholds, train_prevalence):
     """Test-set consequences of each decision threshold, next to the
-    'flag everyone' strategy. `thresholds` maps a label to a cut-off."""
+    'flag everyone' strategy. `thresholds` maps a label to a cut-off.
+
+    `limiar_curva_de_decisao` is the same cut-off on the scale of the decision
+    curve (probabilities corrected for the class weights)."""
     y_true = np.asarray(y_test)
     scores = model.predict_proba(X_test)[:, 1]
     rows = {}
@@ -177,6 +184,7 @@ def threshold_comparison(model, X_test, y_test, thresholds):
         tn = int((~flagged & (y_true == 0)).sum()); fp = int((flagged & (y_true == 0)).sum())
         rows[label] = {
             "limiar": threshold,
+            "limiar_curva_de_decisao": float(undo_class_weight(threshold, train_prevalence)),
             "sensibilidade": tp / (tp + fn),
             "especificidade": tn / (tn + fp),
             "sinalizados": tp + fp,
